@@ -29,13 +29,13 @@
                 <p style="color:#388e3c; font-size:13px; margin:0;">Please check your email and click the verification link to activate your account.</p>
             </div>
 
-            <!-- <p class="or">Or continue with</p>
+            <p class="or">Or continue with</p>
             <div class="social-login">
-                <i class="fab fa-google"></i>
+                <!-- <i class="fab fa-google"></i> -->
                 <i class="fab fa-facebook-f" id="fbLoginBtn" title="Sign up with Facebook"></i>
-                <i class="fab fa-twitter"></i>
-                <i class="fab fa-linkedin-in"></i>
-            </div> -->
+                <!-- <i class="fab fa-twitter"></i>
+                <i class="fab fa-linkedin-in"></i> -->
+            </div>
 
             <p class="signup">Already have an account? <a href="/login.html">Sign in</a></p>
         </div>
@@ -47,6 +47,25 @@
             const regex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
             return regex.test(email);
         }
+        
+        window.fbAsyncInit = function () {
+            FB.init({
+            appId: '1631429594752402',
+            cookie: true,
+            xfbml: true,
+            version: 'v19.0'
+            });
+        };
+
+        (function (d, s, id) {
+            var js, fjs = d.getElementsByTagName(s)[0];
+            if (d.getElementById(id)) return;
+            js = d.createElement(s);
+            js.id = id;
+            js.src = "https://connect.facebook.net/en_US/sdk.js";
+            fjs.parentNode.insertBefore(js, fjs);
+        }(document, 'script', 'facebook-jssdk'));
+
 
         document.getElementById('signupBtn').addEventListener('click', async function () {
             const name     = document.getElementById('nameInput').value.trim();
@@ -135,9 +154,14 @@
             }
         });
 
-        document.getElementById('fbLoginBtn').addEventListener('click', function () {
+        
+        const fbBtn = document.getElementById('fbLoginBtn');
+        if (fbBtn) {
+            fbBtn.addEventListener('click', function () {
             window.location.href = '/auth/facebook';
-        });
+            });
+        }
+
 
         fetch('/api/me')
             .then(res => { if (res.ok) window.location.href = '/dashboard.html'; })

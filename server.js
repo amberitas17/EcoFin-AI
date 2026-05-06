@@ -60,7 +60,7 @@ app.get('/auth/facebook', (req, res) => {
     const params = new URLSearchParams({
         client_id:     process.env.APP_ID,
         redirect_uri:  process.env.REDIRECT_URI,
-        scope:         'public_profile',
+        scope:         'email,public_profile',
         response_type: 'code',
     });
 
@@ -165,7 +165,7 @@ app.post('/auth/signup', async (req, res) => {
     }
 
     try {
-        const appUrl = process.env.APP_URL || 'https://ecofin-ai-production-f13d.up.railway.app';
+        const appUrl = process.env.APP_URL || 'https://ecofin-ai.onrender.com';
 
         const { data, error: authError } = await supabase.auth.signUp({
             email,
