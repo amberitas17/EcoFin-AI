@@ -60,8 +60,10 @@ app.get('/auth/facebook', (req, res) => {
     const params = new URLSearchParams({
         client_id:     process.env.APP_ID,
         redirect_uri:  process.env.REDIRECT_URI,
-        scope:         'email,public_profile',
+        // scope:         'email,public_profile',
+        config_id:     '983035217405408',
         response_type: 'code',
+        override_default_response_type: 'true'
     });
 
     res.redirect(`https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`);
@@ -363,7 +365,8 @@ app.get('/auth/messenger', (req, res) => {
     const params = new URLSearchParams({
         client_id:     process.env.APP_ID,
         redirect_uri:  process.env.REDIRECT_URI,
-        scope:         'public_profile',
+        // scope:         'public_profile',
+        config_id:     '983035217405408',
         response_type: 'code',
         state:         req.session.userId,
     });
