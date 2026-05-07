@@ -155,12 +155,17 @@
         });
 
         
-        const fbBtn = document.getElementById('fbLoginBtn');
-        if (fbBtn) {
-            fbBtn.addEventListener('click', function () {
+        //const fbBtn = document.getElementById('fbLoginBtn');
+        //if (fbBtn) {
+            //fbBtn.addEventListener('click', function () {
+            //window.location.href = '/auth/facebook';
+            //});
+        //} 
+        
+        document.getElementById('fbLoginBtn').addEventListener('click', function () {
             window.location.href = '/auth/facebook';
-            });
-        }
+        });
+
 
 
         fetch('/api/me')

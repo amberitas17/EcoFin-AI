@@ -105,6 +105,61 @@ async function deleteCatches(userId) {
     if (error) throw new Error(error.message);
 }
 
+// ─── Delete a user ────────────────────────────────────────────
+async function deleteUser(userId) {
+    // 1. Get the user row first so we can access auth_id
+    const user = await getUserById(userId);
+
+    if (!user) {
+        throw new Error('User not found');
+    }
+
+    if (!user.auth_id) {
+        throw new Error('Missing auth_id for this user');
+    }
+
+    // 2. Delete from your public users table
+    const { error: tableError } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+
+    if (tableError) throw new Error(tableError.message);
+
+    // 3. Delete from Supabase Auth using the real auth UUID
+    const { error: authError } = await supabase.auth.admin.deleteUser(user.auth_id);
+
+    if (authError) throw new Error(authError.message);
+}
+async function getUserById(userId) {
+    const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+}
+
+// async function signInWithFacebook() {
+//   const { data, error } = await supabase.auth.signInWithOAuth({
+//     provider: 'facebook',
+//     options: {
+//       redirectTo: `${window.location.origin}/dashboard.html`
+//     }
+//   });
+
+//   if (error) {
+//     console.error('Error signing in with Facebook:', error.message);
+//     alert('Facebook login failed: ' + error.message);
+//     return;
+//   }
+
+//   // Supabase will redirect the browser to Facebook
+// }
+
+//
 module.exports = {
     saveUser,
     getUserByPSID,
@@ -115,5 +170,7 @@ module.exports = {
     saveCatch,
     countCatches,
     deleteCatches,
+    deleteUser,
+    getUserById,
     supabase
 };

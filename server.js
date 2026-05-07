@@ -14,6 +14,7 @@ const {
     saveCatch,
     countCatches,
     deleteCatches,
+    deleteUser,
     supabase
 } = require('./src/services/supabase');
 const { handleSystemMessage, sendMessengerMessage, sendWhatsAppMessage, sendWelcomeButtons, sendWhatsAppMenu } = require('./src/services/messengerService');
@@ -554,6 +555,62 @@ app.delete('/api/clear-catches', async (req, res) => {
     }
 });
 
+// ─────────────────────────────────────────────────────────────
+// M. Delete Account
+// ─────────────────────────────────────────────────────────────
+app.delete('/api/delete-user', async (req, res) => {
+    if (!req.session.loggedIn) {
+        return res.status(401).json({ error: 'Not logged in' });
+    }
+
+    try {
+        const userId = req.session.userId;
+
+        await deleteCatches(userId);
+        await deleteUser(userId);
+
+        req.session.destroy(err => {
+            if (err) {
+                return res.status(500).json({ error: 'Failed to clear session' });
+            }
+
+            res.clearCookie('connect.sid');
+            return res.json({
+                success: true,
+                message: 'User account deleted successfully.'
+            });
+        });
+    } catch (err) {
+        console.error('❌ Delete user failed:', err.message);
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────
+// 
+// ─────────────────────────────────────────────────────────────
+// app.get('/auth/facebook-signin', async (req, res) => {
+//     try {
+//         const redirectTo = `${req.protocol}://${req.get('host')}/dashboard.html`;
+
+//         const { data, error } = await supabase.auth.signInWithOAuth({
+//             provider: 'facebook',
+//             options: {
+//                 redirectTo
+//             }
+//         });
+
+//         if (error) {
+//             console.error('Facebook OAuth error:', error.message);
+//             return res.redirect('/signup.html?error=facebook_oauth');
+//         }
+
+//         return res.redirect(data.url);
+//     } catch (err) {
+//         console.error('Facebook OAuth server error:', err.message);
+//         return res.redirect('/signup.html?error=server');
+//     }
+// });
 
 // ─────────────────────────────────────────────────────────────
 // L. Update Profile (name + email)
@@ -586,6 +643,7 @@ app.get('/auth/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/login.html');
 });
+
 
 
 // ─────────────────────────────────────────────────────────────
