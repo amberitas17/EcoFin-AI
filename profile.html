@@ -382,7 +382,6 @@
         // ── Init ──────────────────────────────────────────────────────
         async function init() {
             currentUser = await requireLogin();
-            const currentUser = JSON.parse(localStorage.getItem('currentUser'));
             console.log('Current user:', currentUser);
             if (!currentUser) return;
 
