@@ -118,6 +118,34 @@ async function deleteUser(userId) {
         throw new Error('Missing auth_id for this user');
     }
 
+    if (!user.auth_id || user.facebook_id) {
+        const user = await getUserById(appUserId);
+
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        console.log('Deleting app user:', appUserId);
+
+        // delete dependent data
+        await deleteCatches(appUserId);
+
+        // delete local user row only
+        const { error } = await supabase
+            .from('users')
+            .delete()
+            .eq('id', appUserId);
+
+        if (error) {
+            throw new Error(`User delete failed: ${error.message}`);
+        }
+
+        return {
+            success: true,
+            deletedFromAuth: false,
+            hadFacebookId: !!user.facebook_id
+        };
+    }
     // 2. Delete from your public users table
     const { error: tableError } = await supabase
         .from('users')
@@ -131,6 +159,7 @@ async function deleteUser(userId) {
 
     if (authError) throw new Error(authError.message);
 }
+
 async function getUserById(userId) {
     const { data, error } = await supabase
         .from('users')

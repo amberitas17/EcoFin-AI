@@ -559,30 +559,31 @@ app.delete('/api/clear-catches', async (req, res) => {
 // M. Delete Account
 // ─────────────────────────────────────────────────────────────
 app.delete('/api/delete-user', async (req, res) => {
-    if (!req.session.loggedIn) {
-        return res.status(401).json({ error: 'Not logged in' });
-    }
-
     try {
-        const userId = req.session.userId;
+        console.log('DELETE /api/delete-user hit');
+        console.log('Session userId:', req.session.userId);
 
-        await deleteCatches(userId);
-        await deleteUser(userId);
+        const result = await deleteUser(req.session.userId);
 
         req.session.destroy(err => {
             if (err) {
+                console.error('Session destroy failed:', err);
                 return res.status(500).json({ error: 'Failed to clear session' });
             }
 
             res.clearCookie('connect.sid');
             return res.json({
                 success: true,
-                message: 'User account deleted successfully.'
+                message: 'User account deleted successfully.',
+                result
             });
         });
     } catch (err) {
-        console.error('❌ Delete user failed:', err.message);
-        return res.status(500).json({ error: err.message });
+        console.error('❌ DELETE USER ROUTE ERROR:', err);
+        return res.status(500).json({
+            error: err.message,
+            stack: err.stack
+        });
     }
 });
 
