@@ -468,6 +468,7 @@ app.get('/api/my-catches', async (req, res) => {
 
     try {
         const catches = await getCatchesByUser(req.session.userId);
+        console.log(`[EcoFin] Retrieved ${catches.length} catches for user ${req.session.userId}`);
         res.json(catches);
     } catch (err) {
         res.status(500).json({ error: err.message });
