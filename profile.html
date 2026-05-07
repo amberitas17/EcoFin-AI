@@ -400,7 +400,7 @@
 
             let catchCount = 0;
             try {
-                const res = await fetch(`/api/catches`);
+                const res = await fetch(`/api/catches/${currentUser.id}`);
                 const catches = await res.json();
                 catchCount = catches.length;
                 if (catches.length) {
