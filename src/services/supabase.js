@@ -107,57 +107,46 @@ async function deleteCatches(userId) {
 
 // ─── Delete a user ────────────────────────────────────────────
 async function deleteUser(userId) {
-    // 1. Get the user row first so we can access auth_id
+
     const user = await getUserById(userId);
 
     if (!user) {
         throw new Error('User not found');
     }
 
-    if (!user.auth_id) {
-        throw new Error('Missing auth_id for this user');
-    }
+    console.log('Deleting user:', userId);
 
-    if (!user.auth_id || user.facebook_id) {
-        const user = await getUserById(appUserId);
+    // Delete related data first
+    await deleteCatches(userId);
 
-        if (!user) {
-            throw new Error('User not found');
-        }
-
-        console.log('Deleting app user:', appUserId);
-
-        // delete dependent data
-        await deleteCatches(appUserId);
-
-        // delete local user row only
-        const { error } = await supabase
-            .from('users')
-            .delete()
-            .eq('id', appUserId);
-
-        if (error) {
-            throw new Error(`User delete failed: ${error.message}`);
-        }
-
-        return {
-            success: true,
-            deletedFromAuth: false,
-            hadFacebookId: !!user.facebook_id
-        };
-    }
-    // 2. Delete from your public users table
+    // Delete local user row
     const { error: tableError } = await supabase
         .from('users')
         .delete()
         .eq('id', userId);
 
-    if (tableError) throw new Error(tableError.message);
+    if (tableError) {
+        throw new Error(`User delete failed: ${tableError.message}`);
+    }
 
-    // 3. Delete from Supabase Auth using the real auth UUID
-    const { error: authError } = await supabase.auth.admin.deleteUser(user.auth_id);
+    // Delete from Supabase Auth ONLY if linked
+    if (user.auth_id) {
 
-    if (authError) throw new Error(authError.message);
+        const { error: authError } =
+            await supabase.auth.admin.deleteUser(user.auth_id);
+
+        if (authError) {
+            throw new Error(`Auth delete failed: ${authError.message}`);
+        }
+
+        console.log('Deleted from Supabase Auth');
+    } else {
+        console.log('Facebook/custom user deleted locally only');
+    }
+
+    return {
+        success: true
+    };
 }
 
 async function getUserById(userId) {
