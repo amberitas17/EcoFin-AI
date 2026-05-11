@@ -356,7 +356,7 @@
     </div>
 
     <!-- WhatsApp Modal -->
-    <!-- <div class="wa-modal-overlay" id="waModal">
+    <div class="wa-modal-overlay" id="waModal">
         <div class="modal-box">
             <h3>📱 Connect WhatsApp</h3>
             <input type="tel" id="waNumber" placeholder="e.g. 639171234567">
@@ -366,7 +366,7 @@
                 <button class="btn-save" onclick="saveWhatsApp()">Connect</button>
             </div>
         </div>
-    </div> -->
+    </div>
 
     <!-- Floating Toast -->
     <div class="toast" id="connectToast">
@@ -504,7 +504,7 @@
                 waBtn.onclick     = () => showToast(
                     "✅ WhatsApp connected! Send 'hi' to our EcoFin WhatsApp to activate notifications.",
                     '💬 Open EcoFin on WhatsApp',
-                    'https://wa.me/15551380852',
+                    'https://wa.me/15551551591',
                     'whatsapp'
                 );
             } else {
@@ -563,12 +563,30 @@
         }
 
         // ── WhatsApp Modal ────────────────────────────────────────────
-        function openWAModal() {
+        /*function openWAModal() {
             document.getElementById('waModal').classList.add('active');
         }
 
         function closeWAModal() {
             document.getElementById('waModal').classList.remove('active');
+        }*/
+
+        function openWAModal() {
+            const modal = document.getElementById('waModal');
+            if (!modal) {
+                console.error("waModal not found in DOM");
+                return;
+            }
+            modal.classList.add('active');
+        }
+
+        function closeWAModal() {
+            const modal = document.getElementById('waModal');
+            if (!modal) {
+                console.error("waModal not found in DOM");
+                return;
+            }
+            modal.classList.remove('active');
         }
 
         async function saveWhatsApp() {
@@ -588,7 +606,7 @@
                     waBtn.onclick     = () => showToast(
                         "✅ WhatsApp connected! Send 'hi' to our EcoFin WhatsApp to activate notifications.",
                         '💬 Open EcoFin on WhatsApp',
-                        'https://wa.me/15551380852',
+                        'https://wa.me/15551551591',
                         'whatsapp'
                     );
                     currentUser.whatsapp           = phone;
@@ -598,7 +616,7 @@
                     showToast(
                         "✅ WhatsApp connected! Send 'hi' to our EcoFin WhatsApp to activate notifications.",
                         '💬 Open EcoFin on WhatsApp',
-                        'https://wa.me/15551534690',
+                        'https://wa.me/15551551591',
                         'whatsapp'
                     );
                 } else {
