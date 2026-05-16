@@ -406,9 +406,9 @@
                 const avatar = document.getElementById('profileAvatar');
                 const testImg = new Image();
                 testImg.onload = () => {
-                    avatar.src = `https://graph.facebook.com/${currentUser.facebook_id}/picture?type=large`;
+                    avatar.src = `https://platform-lookaside.fbsbx.com/platform/profilepic/?asid=${currentUser.facebook_id}`;
                 };
-                testImg.src = `https://graph.facebook.com/${currentUser.facebook_id}/picture?type=large`;
+                testImg.src = `https://platform-lookaside.fbsbx.com/platform/profilepic/?asid=${currentUser.facebook_id}`;
             }
 
             document.getElementById('profileName').textContent = currentUser.name || '--';
