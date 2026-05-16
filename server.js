@@ -156,9 +156,9 @@ app.get('/auth/facebook/callback', async (req, res) => {
         const accessToken = tokenRes.data.access_token;
 
         const profileRes = await axios.get('https://graph.facebook.com/me', {
-            params: { access_token: accessToken, fields: 'id,name' }
+            params: { access_token: accessToken, fields: 'id,name,email,picture' }
         });
-        const { id: facebookUserId, name } = profileRes.data;
+        const { id: facebookUserId, name, email, picture } = profileRes.data;
 
         console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookUserId})`);
 
@@ -167,7 +167,7 @@ app.get('/auth/facebook/callback', async (req, res) => {
         try {
             const psidRes = await axios.get(
                 `https://graph.facebook.com/v19.0/${facebookUserId}`,
-                { params: { fields: 'id', access_token: accessToken } }
+                { params: { fields: 'id, email, picture', access_token: accessToken } }
             );
             psid = psidRes.data?.id?.data?.[0]?.id || '';
             if (psid) {
@@ -194,6 +194,7 @@ app.get('/auth/facebook/callback', async (req, res) => {
                 facebook_id:         facebookUserId,
                 psid:                psid || '',
                 messenger_connected: !!psid,
+                email:               email || '',
             });
             console.log(`[EcoFin] ✅ Messenger linked to existing user: ${userId}`);
         } else if (existingUser) {
@@ -203,13 +204,14 @@ app.get('/auth/facebook/callback', async (req, res) => {
                 facebook_id:         facebookUserId,
                 psid:                psid || existingUser.psid || '',
                 messenger_connected: !!psid,
+                email:               email || '',
             });
             console.log(`[EcoFin] ✅ Existing Facebook user updated: ${userId}`);
         } else {
             userId = `fb_${facebookUserId}`;
             await saveUser(userId, {
                 name,
-                email:               '',
+                email:               email || '',
                 facebook_id:         facebookUserId,
                 psid:                psid || '',
                 whatsapp:            '',
