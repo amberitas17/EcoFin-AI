@@ -18,6 +18,12 @@ const {
     supabase
 } = require('./src/services/supabase');
 const { handleSystemMessage, sendMessengerMessage, sendWhatsAppMessage, sendWelcomeButtons, sendWhatsAppMenu } = require('./src/services/messengerService');
+// const { createClient } = require('@supabase/supabase-js');
+
+// const supabase = createClient(
+//     process.env.SUPABASE_URL,
+//     process.env.SUPABASE_SERVICE_KEY
+// );
 
 const app = express();
 
@@ -54,21 +60,59 @@ app.get('/login.html', (req, res) => {
 // A. Facebook OAuth — Step 1: Redirect to Facebook Login
 // ─────────────────────────────────────────────────────────────
 
-app.get('/auth/facebook', (req, res) => {
-    console.log('[EcoFin] APP_ID:', process.env.APP_ID);
-    console.log('[EcoFin] REDIRECT_URI:', process.env.REDIRECT_URI);
+// app.get('/auth/facebook', (req, res) => {
+//     console.log('[EcoFin] APP_ID:', process.env.APP_ID);
+//     console.log('[EcoFin] REDIRECT_URI:', process.env.REDIRECT_URI);
 
-    const params = new URLSearchParams({
-        client_id:     process.env.APP_ID,
-        redirect_uri:  process.env.REDIRECT_URI,
-        // scope:         'email,public_profile',
-        config_id:     '983035217405408',
-        response_type: 'code',
-        override_default_response_type: 'true'
+//     const params = new URLSearchParams({
+//         client_id:     process.env.APP_ID,
+//         redirect_uri:  process.env.REDIRECT_URI,
+//         // scope:         'email,public_profile',
+//         config_id:     '983035217405408',
+//         response_type: 'code',
+//         override_default_response_type: 'true'
+//     });
+
+//     res.redirect(`https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`);
+// });
+// app.get('/auth/facebook', (req, res) => {
+//     console.log('[EcoFin] APP_ID:', process.env.APP_ID);
+//     console.log('[EcoFin] REDIRECT_URI:', process.env.REDIRECT_URI);
+
+//     const params = new URLSearchParams({
+//         client_id: process.env.APP_ID,
+//         redirect_uri: process.env.REDIRECT_URI,
+//         scope: 'public_profile,email',
+//         response_type: 'code'
+//     });
+
+//     const facebookUrl = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
+//     console.log('[EcoFin] Facebook Login URL:', facebookUrl);
+
+//     res.redirect(facebookUrl);
+// });
+
+app.get('/auth/facebook', async (req, res) => {
+  try {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'facebook',
+      options: {
+        redirectTo: 'https://ecofin-ai.onrender.com/auth/callback'
+      }
     });
 
-    res.redirect(`https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`);
+    if (error) {
+      console.error('[EcoFin] Supabase OAuth error:', error.message);
+      return res.status(500).send(error.message);
+    }
+
+    return res.redirect(data.url);
+  } catch (err) {
+    console.error('[EcoFin] Facebook login route failed:', err);
+    return res.status(500).send('OAuth failed');
+  }
 });
+
 
 
 // ─────────────────────────────────────────────────────────────
@@ -224,6 +268,10 @@ app.post('/auth/signup', async (req, res) => {
 
 app.get('/auth/verify', (req, res) => {
     res.sendFile(__dirname + '/verify.html');
+});
+
+app.get('/auth/callback', (req, res) => {
+  res.redirect('/dashboard.html');
 });
 
 
