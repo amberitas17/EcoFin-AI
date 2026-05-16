@@ -92,27 +92,101 @@ app.get('/login.html', (req, res) => {
 //     res.redirect(facebookUrl);
 // });
 
-app.get('/auth/facebook', async (req, res) => {
-  try {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'facebook',
-      options: {
-        redirectTo: 'https://ecofin-ai.onrender.com/auth/callback'
-      }
-    });
+// app.get('/auth/facebook', async (req, res) => {
+//   try {
+//     const { data, error } = await supabase.auth.signInWithOAuth({
+//       provider: 'facebook',
+//       options: {
+//         redirectTo: 'https://ecofin-ai.onrender.com/auth/callback'
+//       }
+//     });
 
-    if (error) {
-      console.error('[EcoFin] Supabase OAuth error:', error.message);
-      return res.status(500).send(error.message);
-    }
+//     if (error) {
+//       console.error('[EcoFin] Supabase OAuth error:', error.message);
+//       return res.status(500).send(error.message);
+//     }
 
-    return res.redirect(data.url);
-  } catch (err) {
-    console.error('[EcoFin] Facebook login route failed:', err);
-    return res.status(500).send('OAuth failed');
-  }
+//     return res.redirect(data.url);
+//   } catch (err) {
+//     console.error('[EcoFin] Facebook login route failed:', err);
+//     return res.status(500).send('OAuth failed');
+//   }
+// });
+
+app.get('/auth/facebook', (req, res) => {
+  console.log('[EcoFin] APP_ID:', process.env.APP_ID);
+  console.log('[EcoFin] REDIRECT_URI:', process.env.REDIRECT_URI);
+
+  const params = new URLSearchParams({
+    client_id: process.env.APP_ID,
+    redirect_uri: process.env.REDIRECT_URI,
+    scope: 'public_profile,email',
+    response_type: 'code'
+  });
+
+  const facebookUrl = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
+  console.log('[EcoFin] Facebook OAuth URL:', facebookUrl);
+
+  res.redirect(facebookUrl);
 });
 
+app.get('/auth/facebook/callback', async (req, res) => {
+  const code = req.query.code;
+
+  if (!code) {
+    return res.status(400).send('No code received');
+  }
+
+  try {
+    // 1) Exchange code for access token
+    const tokenParams = new URLSearchParams({
+      client_id: process.env.APP_ID,
+      client_secret: process.env.APP_SECRET,
+      redirect_uri: process.env.REDIRECT_URI,
+      code
+    });
+
+    const tokenRes = await fetch(
+      `https://graph.facebook.com/v19.0/oauth/access_token?${tokenParams.toString()}`
+    );
+    const tokenData = await tokenRes.json();
+
+    if (tokenData.error) {
+      console.error('[EcoFin] Token exchange error:', tokenData.error);
+      return res.status(400).json(tokenData);
+    }
+
+    // 2) Fetch Facebook profile
+    const profileRes = await fetch(
+      `https://graph.facebook.com/me?fields=id,name,email&access_token=${tokenData.access_token}`
+    );
+    const profile = await profileRes.json();
+
+    console.log('[EcoFin] Facebook profile:', profile);
+
+    // 3) Find or create user in YOUR database
+    // Example:
+    // let user = await db.users.findOne({ facebook_id: profile.id });
+    // if (!user) {
+    //   user = await db.users.create({
+    //     facebook_id: profile.id,
+    //     name: profile.name,
+    //     email: profile.email || null,
+    //     provider: 'facebook'
+    //   });
+    // }
+
+    // 4) Create your own session
+    // req.session.user = user;
+    // or issue a JWT / set a secure cookie
+
+    return res.redirect('/dashboard.html');
+  } catch (err) {
+    console.error('[EcoFin] Facebook auth failed:', err);
+    return res.status(500).send('Facebook login failed');
+  }
+});
+``
 
 
 // ─────────────────────────────────────────────────────────────
@@ -270,9 +344,9 @@ app.get('/auth/verify', (req, res) => {
     res.sendFile(__dirname + '/verify.html');
 });
 
-app.get('/auth/callback', (req, res) => {
-  res.redirect('/dashboard.html');
-});
+// app.get('/auth/callback', (req, res) => {
+//   res.redirect('/dashboard.html');
+// });
 
 
 // ─────────────────────────────────────────────────────────────
