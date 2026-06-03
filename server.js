@@ -334,17 +334,30 @@ app.get('/auth/facebook/callback', async (req, res) => {
     console.log('================================');
 
     const code = req.query.code;
-
-    // 1. Declare these variables out here so the catch block can read them if a failure happens halfway
     let facebookUserId = null;
     let name = null;
 
-    if (code && processedCodes.has(code)) {
-        console.log(`[EcoFin] 🛡️ Blocked delayed duplicate hit for code. Preserving session and forcing dashboard.`);
+    if (!code) {
+        console.warn('[EcoFin] ⚠️ No code received — user may have cancelled login');
+        return res.redirect('/login.html?error=cancelled');
+    }
+
+    // 1. CRITICAL CONCURRENCY LOCK: Check and lock immediately!
+    if (processedCodes.has(code)) {
+        console.log(`[EcoFin] 🛡️ Blocked simultaneous or delayed race-hit for code. Redirecting.`);
+        
+        // If Hit #1 already completed and set session parameters, keep them alive
+        if (req.session && req.session.userId) {
+            req.session.loggedIn = true;
+        }
+
         return req.session.save(() => {
             res.redirect('/dashboard.html');
         });
     }
+
+    // 2. Lock it right here BEFORE any asynchronous database or API calls can execute
+    processedCodes.set(code, Date.now());
 
     if (req.session && (req.session.loggedIn || req.session.userId)) {
         console.log(`[EcoFin] 🚀 Session already exists for ${req.session.userId}. Bypassing exchange.`);
@@ -354,12 +367,7 @@ app.get('/auth/facebook/callback', async (req, res) => {
     }
 
     console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
-    console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
-    
-    if (!code) {
-        console.warn('[EcoFin] ⚠️ No code received — user may have cancelled login');
-        return res.redirect('/login.html?error=cancelled');
-    }
+    console.log('[EcoFin] Code received: YES');
 
     try {
         const tokenRes = await axios.get(
@@ -379,14 +387,11 @@ app.get('/auth/facebook/callback', async (req, res) => {
             params: { access_token: accessToken, fields: 'id,name,email,picture' }
         });
         
-        // 2. Assign the values to the variables declared outside the try block
         facebookUserId = profileRes.data.id;
         name = profileRes.data.name;
         const email = profileRes.data.email;
 
         console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookUserId})`);
-
-        // ... Your existing PSID tracking and User DB saving code stays exactly here ...
 
         let psid = '';
         try {
@@ -440,10 +445,7 @@ app.get('/auth/facebook/callback', async (req, res) => {
             });
         }
 
-        // Cache the processed code
-        processedCodes.set(code, Date.now());
-
-        // Map the authentication tokens to the user context
+        // 3. Session attributes setup
         req.session.userId   = userId;
         req.session.userName = name;
         req.session.loggedIn = true;
@@ -457,11 +459,10 @@ app.get('/auth/facebook/callback', async (req, res) => {
     } catch (err) {
         const errorData = err.response?.data?.error || {};
         
-        // 3. Fallback interceptor: Must also explicitly update and save session variables
-        if ((errorData.code === 100 && errorData.error_subcode === 36009) || processedCodes.has(code)) {
+        // Secondary fallback checking
+        if (errorData.code === 100 && errorData.error_subcode === 36009) {
             console.log('[EcoFin] ℹ️ Handled consumed token on fallback interceptor. Retaining session and redirecting.');
             
-            // Re-verify backup context if thread lost track
             if (facebookUserId) {
                 req.session.userId = `fb_${facebookUserId}`;
                 req.session.loggedIn = true;
