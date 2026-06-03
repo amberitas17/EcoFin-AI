@@ -4,6 +4,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const session = require('express-session');
+const cors = require('cors');
 
 const webhookRoute = require('./src/routes/webhook');
 const {
@@ -27,20 +28,26 @@ const { handleSystemMessage, sendMessengerMessage, sendWhatsAppMessage, sendWelc
 
 const app = express();
 
+// ─── CORS Setup (Allow Credentials) ───────────────
+app.use(cors({
+    origin: process.env.APP_URL || 'https://ecofin-ai.onrender.com',
+    credentials: true,
+}));
+
 app.use(bodyParser.json());
 app.use(express.static(__dirname));
 app.set('trust proxy', 1);
 
-// ─── Session Middleware ───────────────────────────────────────
+// ─── Session Middleware ───────────────────────────
 app.use(session({
     secret: 'ecofin-secret-key',
     resave: false,
     saveUninitialized: false,
-    cookie: { 
-        secure: true,        // ✅ REQUIRED on Render (HTTPS)
+    cookie: {
+        secure: true,
         httpOnly: true,
-        sameSite: 'none'     // ✅ REQUIRED for OAuth
-    }
+        sameSite: 'none',
+    },
 }));
 
 app.use('/webhook', webhookRoute);
