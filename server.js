@@ -329,27 +329,65 @@ app.post('/auth/login', async (req, res) => {
             });
         }
 
-        req.session.userId   = userId;
-        req.session.userName = userData?.name || data.user.user_metadata?.name || email.split('@')[0];
-        req.session.loggedIn = true;
+        // req.session.userId   = userId;
+        // req.session.userName = userData?.name || data.user.user_metadata?.name || email.split('@')[0];
+        // req.session.loggedIn = true;
 
-        console.log(`[EcoFin] ✅ Session created for ${userId}`);
+        // console.log(`[EcoFin] ✅ Session created for ${userId}`);
 
-        // ── Send login notification to Messenger and/or WhatsApp ──
-        const loginUser = userData;
-        if (loginUser) {
-            const loginMsg = `👋 Hi ${loginUser.name}! You've just logged in to EcoFin AI.`;
-            if (loginUser.psid && loginUser.messenger_connected) {
-                await sendMessengerMessage(loginUser.psid, loginMsg);
-                await sendWelcomeButtons(loginUser.psid);
-            }
-            if (loginUser.whatsapp && loginUser.whatsapp_connected) {
-                await sendWhatsAppMessage(loginUser.whatsapp, loginMsg);
-                await sendWhatsAppMenu(loginUser.whatsapp);
-            }
+        // // ── Send login notification to Messenger and/or WhatsApp ──
+        // const loginUser = userData;
+        // if (loginUser) {
+        //     const loginMsg = `👋 Hi ${loginUser.name}! You've just logged in to EcoFin AI.`;
+        //     if (loginUser.psid && loginUser.messenger_connected) {
+        //         await sendMessengerMessage(loginUser.psid, loginMsg);
+        //         await sendWelcomeButtons(loginUser.psid);
+        //     }
+        //     if (loginUser.whatsapp && loginUser.whatsapp_connected) {
+        //         await sendWhatsAppMessage(loginUser.whatsapp, loginMsg);
+        //         await sendWhatsAppMenu(loginUser.whatsapp);
+        //     }
+        // }
+
+        // res.json({ success: true });
+        // ❌ CURRENT CODE:
+// req.session.userId   = userId;
+// req.session.userName = ...
+// req.session.loggedIn = true;
+// console.log(`[EcoFin] ✅ Session created for ${userId}`);
+// ... notification logic ...
+// res.json({ success: true });
+
+//  FIXED CODE:
+    req.session.userId   = userId;
+    req.session.userName = userData?.name || data.user.user_metadata?.name || email.split('@')[0];
+    req.session.loggedIn = true;
+
+    console.log(`[EcoFin] ✅ Session initialized for ${userId}`);
+
+    // ── Send login notification to Messenger and/or WhatsApp ──
+    const loginUser = userData;
+    if (loginUser) {
+        const loginMsg = `👋 Hi ${loginUser.name}! You've just logged in to EcoFin AI.`;
+        if (loginUser.psid && loginUser.messenger_connected) {
+            await sendMessengerMessage(loginUser.psid, loginMsg);
+            await sendWelcomeButtons(loginUser.psid);
         }
+        if (loginUser.whatsapp && loginUser.whatsapp_connected) {
+            await sendWhatsAppMessage(loginUser.whatsapp, loginMsg);
+            await sendWhatsAppMenu(loginUser.whatsapp);
+        }
+    }
 
+    // Wrap your JSON response so it waits for the session to save on Render
+    req.session.save((err) => {
+        if (err) {
+            console.error('[EcoFin] ❌ Session save error:', err);
+            return res.status(500).json({ error: 'Failed to save login session' });
+        }
+        console.log(`[EcoFin] ✅ Session successfully persisted for ${userId}`);
         res.json({ success: true });
+    });
 
     } catch (err) {
         console.error('[EcoFin] ❌ Email login error:', err.message);
@@ -440,149 +478,149 @@ app.get('/auth/verify', (req, res) => {
 // B. Facebook OAuth — Step 2: Callback
 // ─────────────────────────────────────────────────────────────
 
-app.get('/auth/messenger/callback', async (req, res) => {
-    const code = req.query.code;
+// app.get('/auth/messenger/callback', async (req, res) => {
+//     const code = req.query.code;
 
-    console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
-    console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
+//     console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
+//     console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
 
-    if (!code) {
-        console.warn('[EcoFin] ⚠️ No code received — user may have cancelled login');
-        return res.redirect('/login.html?error=cancelled');
-    }
+//     if (!code) {
+//         console.warn('[EcoFin] ⚠️ No code received — user may have cancelled login');
+//         return res.redirect('/login.html?error=cancelled');
+//     }
 
-    try {
-        const tokenRes = await axios.get(
-            'https://graph.facebook.com/v19.0/oauth/access_token',
-            {
-                params: {
-                    client_id:     process.env.APP_ID,
-                    client_secret: process.env.APP_SECRET,
-                    redirect_uri:  process.env.REDIRECT_URI,
-                    code,
-                }
-            }
-        );
-        const accessToken = tokenRes.data.access_token;
+//     try {
+//         const tokenRes = await axios.get(
+//             'https://graph.facebook.com/v19.0/oauth/access_token',
+//             {
+//                 params: {
+//                     client_id:     process.env.APP_ID,
+//                     client_secret: process.env.APP_SECRET,
+//                     redirect_uri:  process.env.REDIRECT_URI,
+//                     code,
+//                 }
+//             }
+//         );
+//         const accessToken = tokenRes.data.access_token;
 
-        const profileRes = await axios.get('https://graph.facebook.com/me', {
-            params: { access_token: accessToken, fields: 'id,name' }
-        });
-        const { id: facebookUserId, name } = profileRes.data;
+//         const profileRes = await axios.get('https://graph.facebook.com/me', {
+//             params: { access_token: accessToken, fields: 'id,name' }
+//         });
+//         const { id: facebookUserId, name } = profileRes.data;
 
-        console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookUserId})`);
+//         console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookUserId})`);
 
-        // ── Retrieve PSID using user's access token ───────────
-        let psid = '';
-        try {
-            const psidRes = await axios.get(
-                `https://graph.facebook.com/v19.0/${facebookUserId}`,
-                { params: { fields: 'ids_for_pages', access_token: accessToken } }
-            );
-            psid = psidRes.data?.ids_for_pages?.data?.[0]?.id || '';
-            if (psid) {
-                console.log(`[EcoFin] ✅ PSID retrieved: ${psid}`);
-            } else {
-                // Fallback: use facebook user ID as PSID
-                psid = facebookUserId;
-                console.log(`[EcoFin] ℹ️ Using facebookUserId as PSID: ${psid}`);
-            }
-        } catch (psidErr) {
-            console.warn('[EcoFin] ⚠️ Could not retrieve PSID:', psidErr.response?.data || psidErr.message);
-            // Fallback: use facebook user ID as PSID
-            psid = facebookUserId;
-            console.log(`[EcoFin] ℹ️ Using facebookUserId as PSID fallback: ${psid}`);
-        }
+//         // ── Retrieve PSID using user's access token ───────────
+//         let psid = '';
+//         try {
+//             const psidRes = await axios.get(
+//                 `https://graph.facebook.com/v19.0/${facebookUserId}`,
+//                 { params: { fields: 'ids_for_pages', access_token: accessToken } }
+//             );
+//             psid = psidRes.data?.ids_for_pages?.data?.[0]?.id || '';
+//             if (psid) {
+//                 console.log(`[EcoFin] ✅ PSID retrieved: ${psid}`);
+//             } else {
+//                 // Fallback: use facebook user ID as PSID
+//                 psid = facebookUserId;
+//                 console.log(`[EcoFin] ℹ️ Using facebookUserId as PSID: ${psid}`);
+//             }
+//         } catch (psidErr) {
+//             console.warn('[EcoFin] ⚠️ Could not retrieve PSID:', psidErr.response?.data || psidErr.message);
+//             // Fallback: use facebook user ID as PSID
+//             psid = facebookUserId;
+//             console.log(`[EcoFin] ℹ️ Using facebookUserId as PSID fallback: ${psid}`);
+//         }
 
-        const existingUser = await getUserByFacebookId(facebookUserId);
-        let userId;
+//         const existingUser = await getUserByFacebookId(facebookUserId);
+//         let userId;
 
-        // If already logged in (email user connecting Messenger)
-        if (req.session.loggedIn && req.session.userId) {
-            userId = req.session.userId;
-            await updateUser(userId, {
-                facebook_id:         facebookUserId,
-                psid:                psid || '',
-                messenger_connected: !!psid,
-            });
-            console.log(`[EcoFin] ✅ Messenger linked to existing user: ${userId}`);
-        } else if (existingUser) {
-            userId = existingUser.id;
-            await updateUser(userId, {
-                name,
-                facebook_id:         facebookUserId,
-                psid:                psid || existingUser.psid || '',
-                messenger_connected: !!psid,
-            });
-            console.log(`[EcoFin] ✅ Existing Facebook user updated: ${userId}`);
-        } else {
-            userId = `fb_${facebookUserId}`;
-            await saveUser(userId, {
-                name,
-                email:               '',
-                facebook_id:         facebookUserId,
-                psid:                psid || '',
-                whatsapp:            '',
-                location:            'Philippines',
-                total_catches:       0,
-                fishing_hours:       0,
-                achievements:        0,
-                success_rate:        0,
-                member_since:        new Date().toLocaleDateString('en-US', {
-                    month: 'long', year: 'numeric'
-                }),
-                messenger_connected: !!psid,
-                whatsapp_connected:  false,
-            });
-            console.log(`[EcoFin] ✅ New Facebook user created: ${userId}`);
-        }
+//         // If already logged in (email user connecting Messenger)
+//         if (req.session.loggedIn && req.session.userId) {
+//             userId = req.session.userId;
+//             await updateUser(userId, {
+//                 facebook_id:         facebookUserId,
+//                 psid:                psid || '',
+//                 messenger_connected: !!psid,
+//             });
+//             console.log(`[EcoFin] ✅ Messenger linked to existing user: ${userId}`);
+//         } else if (existingUser) {
+//             userId = existingUser.id;
+//             await updateUser(userId, {
+//                 name,
+//                 facebook_id:         facebookUserId,
+//                 psid:                psid || existingUser.psid || '',
+//                 messenger_connected: !!psid,
+//             });
+//             console.log(`[EcoFin] ✅ Existing Facebook user updated: ${userId}`);
+//         } else {
+//             userId = `fb_${facebookUserId}`;
+//             await saveUser(userId, {
+//                 name,
+//                 email:               '',
+//                 facebook_id:         facebookUserId,
+//                 psid:                psid || '',
+//                 whatsapp:            '',
+//                 location:            'Philippines',
+//                 total_catches:       0,
+//                 fishing_hours:       0,
+//                 achievements:        0,
+//                 success_rate:        0,
+//                 member_since:        new Date().toLocaleDateString('en-US', {
+//                     month: 'long', year: 'numeric'
+//                 }),
+//                 messenger_connected: !!psid,
+//                 whatsapp_connected:  false,
+//             });
+//             console.log(`[EcoFin] ✅ New Facebook user created: ${userId}`);
+//         }
 
-        req.session.userId   = userId;
-        req.session.userName = name;
-        req.session.loggedIn = true;
+//         req.session.userId   = userId;
+//         req.session.userName = name;
+//         req.session.loggedIn = true;
 
-        // ── Send login notification to Messenger and/or WhatsApp ──
-        const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
-        if (psid) {
-            await sendMessengerMessage(psid, fbLoginMsg);
-            await sendWelcomeButtons(psid);
-        }
+//         // ── Send login notification to Messenger and/or WhatsApp ──
+//         const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
+//         if (psid) {
+//             await sendMessengerMessage(psid, fbLoginMsg);
+//             await sendWelcomeButtons(psid);
+//         }
 
-        const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
-        if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
-            await sendWhatsAppMessage(fbUserData.whatsapp, fbLoginMsg);
-            await sendWhatsAppMenu(fbUserData.whatsapp);
-        }
+//         const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
+//         if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
+//             await sendWhatsAppMessage(fbUserData.whatsapp, fbLoginMsg);
+//             await sendWhatsAppMenu(fbUserData.whatsapp);
+//         }
 
-        res.redirect('/dashboard.html');
+//         res.redirect('/dashboard.html');
 
-    } catch (err) {
-        console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
-        res.redirect('/login.html?error=failed');
-    }
-});
+//     } catch (err) {
+//         console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
+//         res.redirect('/login.html?error=failed');
+//     }
+// });
 
 
-// ─────────────────────────────────────────────────────────────
-// C. Connect Messenger (after already logged in)
-// ─────────────────────────────────────────────────────────────
+// // ─────────────────────────────────────────────────────────────
+// // C. Connect Messenger (after already logged in)
+// // ─────────────────────────────────────────────────────────────
 
-app.get('/auth/messenger', (req, res) => {
-    if (!req.session.loggedIn) return res.redirect('/login.html?error=not_logged_in');
+// app.get('/auth/messenger', (req, res) => {
+//     if (!req.session.loggedIn) return res.redirect('/login.html?error=not_logged_in');
 
-    console.log('[EcoFin] Connect Messenger REDIRECT_URI:', process.env.REDIRECT_URI);
+//     console.log('[EcoFin] Connect Messenger REDIRECT_URI:', process.env.REDIRECT_URI);
 
-    const params = new URLSearchParams({
-        client_id:     process.env.APP_ID,
-        redirect_uri:  process.env.REDIRECT_URI,
-        // scope:         'public_profile',
-        config_id:     '983035217405408',
-        response_type: 'code',
-        state:         req.session.userId,
-    });
+//     const params = new URLSearchParams({
+//         client_id:     process.env.APP_ID,
+//         redirect_uri:  process.env.REDIRECT_URI,
+//         // scope:         'public_profile',
+//         config_id:     '983035217405408',
+//         response_type: 'code',
+//         state:         req.session.userId,
+//     });
 
-    res.redirect(`https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`);
-});
+//     res.redirect(`https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`);
+// });
 
 
 // ─────────────────────────────────────────────────────────────
