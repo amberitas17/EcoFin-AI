@@ -132,21 +132,40 @@ app.get('/login.html', (req, res) => {
 //   }
 // });
 
+// app.get('/auth/facebook', (req, res) => {
+//   console.log('[EcoFin] APP_ID:', process.env.APP_ID);
+//   console.log('[EcoFin] REDIRECT_URI:', process.env.REDIRECT_URI);
+
+//   const params = new URLSearchParams({
+//     client_id: process.env.APP_ID,
+//     redirect_uri: process.env.REDIRECT_URI,
+//     scope: 'public_profile,email',
+//     response_type: 'code'
+//   });
+
+//   const facebookUrl = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
+//   console.log('[EcoFin] Facebook OAuth URL:', facebookUrl);
+
+//   res.redirect(facebookUrl);
+// });
+
 app.get('/auth/facebook', (req, res) => {
-  console.log('[EcoFin] APP_ID:', process.env.APP_ID);
-  console.log('[EcoFin] REDIRECT_URI:', process.env.REDIRECT_URI);
+    // CRITICAL: Force the browser to completely ignore its cache for this request
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
 
-  const params = new URLSearchParams({
-    client_id: process.env.APP_ID,
-    redirect_uri: process.env.REDIRECT_URI,
-    scope: 'public_profile,email',
-    response_type: 'code'
-  });
+    const stringifiedParams = queryString.stringify({
+        client_id: process.env.APP_ID,
+        redirect_uri: process.env.REDIRECT_URI,
+        scope: ['public_profile', 'email'].join(','),
+        response_type: 'code',
+        auth_type: 'rerequest', // Forces a fresh authorization block
+        display: 'popup'
+    });
 
-  const facebookUrl = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
-  console.log('[EcoFin] Facebook OAuth URL:', facebookUrl);
-
-  res.redirect(facebookUrl);
+    const facebookLoginUrl = `https://www.facebook.com/v19.0/dialog/oauth?${stringifiedParams}`;
+    res.redirect(facebookLoginUrl);
 });
 
 // app.get('/auth/facebook/callback', async (req, res) => {
