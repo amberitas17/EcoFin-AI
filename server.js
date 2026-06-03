@@ -335,7 +335,10 @@ app.get('/auth/facebook/callback', async (req, res) => {
 
     const code = req.query.code;
 
-    // 1. If this code was already handled, save the current session context BEFORE redirecting
+    // 1. Declare these variables out here so the catch block can read them if a failure happens halfway
+    let facebookUserId = null;
+    let name = null;
+
     if (code && processedCodes.has(code)) {
         console.log(`[EcoFin] 🛡️ Blocked delayed duplicate hit for code. Preserving session and forcing dashboard.`);
         return req.session.save(() => {
@@ -343,7 +346,6 @@ app.get('/auth/facebook/callback', async (req, res) => {
         });
     }
 
-    // 2. If the user session already exists, save it before moving along
     if (req.session && (req.session.loggedIn || req.session.userId)) {
         console.log(`[EcoFin] 🚀 Session already exists for ${req.session.userId}. Bypassing exchange.`);
         return req.session.save(() => {
@@ -376,9 +378,15 @@ app.get('/auth/facebook/callback', async (req, res) => {
         const profileRes = await axios.get('https://graph.facebook.com/me', {
             params: { access_token: accessToken, fields: 'id,name,email,picture' }
         });
-        const { id: facebookUserId, name, email, picture } = profileRes.data;
+        
+        // 2. Assign the values to the variables declared outside the try block
+        facebookUserId = profileRes.data.id;
+        name = profileRes.data.name;
+        const email = profileRes.data.email;
 
         console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookUserId})`);
+
+        // ... Your existing PSID tracking and User DB saving code stays exactly here ...
 
         let psid = '';
         try {
