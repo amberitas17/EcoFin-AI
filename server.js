@@ -28,6 +28,7 @@ const { handleSystemMessage, sendMessengerMessage, sendWhatsAppMessage, sendWelc
 //     process.env.SUPABASE_URL,
 //     process.env.SUPABASE_SERVICE_KEY
 // );
+const queryString = require('querystring'); // Add this line at the top
 
 const app = express();
 
