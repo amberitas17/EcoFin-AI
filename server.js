@@ -5,6 +5,9 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 const session = require('express-session');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
+
+
 
 const webhookRoute = require('./src/routes/webhook');
 const {
@@ -47,9 +50,12 @@ app.use(session({
     cookie: {
         secure: true,
         httpOnly: true,
-        sameSite: 'none'
+        sameSite: 'none',
+        maxAge: 24 * 60 * 60 * 1000 // 1 day expiration (prevents session dropping instantly)
     }
 }));
+// Place this right before your session middleware config
+app.use(cookieParser());
 
 app.use('/webhook', webhookRoute);
 
