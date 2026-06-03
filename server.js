@@ -29,6 +29,7 @@ const app = express();
 
 app.use(bodyParser.json());
 app.use(express.static(__dirname));
+app.set('trust proxy', 1);
 
 // ─── Session Middleware ───────────────────────────────────────
 app.use(session({
