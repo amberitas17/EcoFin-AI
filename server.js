@@ -287,6 +287,19 @@ app.get('/auth/facebook', (req, res) => {
 //         console.error('[EcoFin FULL ERROR]', err.response?.data);
 //     }
 // });
+// 1. Put this memory cache near the top of your server file (outside the routes)
+const processedCodes = new Map();
+
+// Clean up memory leaks by wiping old codes after 10 seconds
+setInterval(() => {
+    const now = Date.now();
+    for (const [code, timestamp] of processedCodes.entries()) {
+        if (now - timestamp > 10000) processedCodes.delete(code);
+    }
+}, 10000);
+
+// ... your other code ...
+
 app.get('/auth/facebook/callback', async (req, res) => {
     console.log('================================');
     console.log('FACEBOOK CALLBACK HIT');
@@ -294,13 +307,19 @@ app.get('/auth/facebook/callback', async (req, res) => {
     console.log('CODE:', req.query.code);
     console.log('================================');
 
-    // 1. CRITICAL: Check if this session is already authorized or in mid-login sequence
+    const code = req.query.code;
+
+    // 2. CRITICAL: If this exact code was already successfully processed by Hit #1, 
+    // immediately force approval and redirect them forward.
+    if (code && processedCodes.has(code)) {
+        console.log(`[EcoFin] 🛡️ Blocked delayed duplicate hit for code. Forcing redirect to dashboard.`);
+        return res.redirect('/dashboard.html');
+    }
+
     if (req.session && (req.session.loggedIn || req.session.userId)) {
         console.log(`[EcoFin] 🚀 Session already exists for ${req.session.userId}. Bypassing exchange.`);
         return res.redirect('/dashboard.html');
     }
-
-    const code = req.query.code;
 
     console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
     console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
@@ -361,7 +380,6 @@ app.get('/auth/facebook/callback', async (req, res) => {
                 messenger_connected: !!psid,
                 email:               email || '',
             });
-            console.log(`[EcoFin] ✅ Messenger linked to existing user: ${userId}`);
         } else if (existingUser) {
             userId = existingUser.id;
             await updateUser(userId, {
@@ -371,7 +389,6 @@ app.get('/auth/facebook/callback', async (req, res) => {
                 messenger_connected: !!psid,
                 email:               email || '',
             });
-            console.log(`[EcoFin] ✅ Existing Facebook user updated: ${userId}`);
         } else {
             userId = `fb_${facebookUserId}`;
             await saveUser(userId, {
@@ -391,8 +408,10 @@ app.get('/auth/facebook/callback', async (req, res) => {
                 messenger_connected: !!psid,
                 whatsapp_connected:  false,
             });
-            console.log(`[EcoFin] ✅ New Facebook user created: ${userId}`);
         }
+
+        // 3. Mark code as successfully used right before saving the session
+        processedCodes.set(code, Date.now());
 
         req.session.userId   = userId;
         req.session.userName = name;
@@ -407,16 +426,13 @@ app.get('/auth/facebook/callback', async (req, res) => {
     } catch (err) {
         const errorData = err.response?.data?.error || {};
         
-        // 2. CRITICAL GUEST PASS: If this hit failed ONLY because a twin request used the code first,
-        // but our session data is populated, redirect to dashboard instead of failing out!
-        if (errorData.code === 100 && errorData.error_subcode === 36009 && req.session?.userId) {
-            console.log('[EcoFin] ℹ️ Caught double-submit token consumption error. Session exists; redirecting safely.');
-            req.session.loggedIn = true;
+        // Secondary safety guard
+        if ((errorData.code === 100 && errorData.error_subcode === 36009) || processedCodes.has(code)) {
+            console.log('[EcoFin] ℹ️ Handled consumed token on fallback interceptor. Redirecting.');
             return res.redirect('/dashboard.html');
         }
 
         console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
-        console.error('[EcoFin FULL ERROR]', err.response?.data);
         res.redirect('/login.html?error=failed');
     }
 });
