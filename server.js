@@ -143,18 +143,168 @@ app.get('/auth/facebook', (req, res) => {
   res.redirect(facebookUrl);
 });
 
+// app.get('/auth/facebook/callback', async (req, res) => {
+//     console.log('================================');
+//         console.log('FACEBOOK CALLBACK HIT');
+//         console.log('TIME:', new Date().toISOString());
+//         console.log('CODE:', req.query.code);
+//         console.log('================================');
+//       if (req.session && req.session.loggedIn) {
+//         return res.redirect('/dashboard.html');
+//     }
+
+//     const code = req.query.code;
+
+//     console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
+//     console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
+    
+
+//     if (!code) {
+//         console.warn('[EcoFin] ⚠️ No code received — user may have cancelled login');
+//         return res.redirect('/login.html?error=cancelled');
+//     }
+  
+
+//     try {
+//         const tokenRes = await axios.get(
+//             'https://graph.facebook.com/v19.0/oauth/access_token',
+//             {
+//                 params: {
+//                     client_id:     process.env.APP_ID,
+//                     client_secret: process.env.APP_SECRET,
+//                     redirect_uri:  process.env.REDIRECT_URI,
+//                     code,
+//                 }
+//             }
+//         );
+//         const accessToken = tokenRes.data.access_token;
+
+//         const profileRes = await axios.get('https://graph.facebook.com/me', {
+//             params: { access_token: accessToken, fields: 'id,name,email,picture' }
+//         });
+//         const { id: facebookUserId, name, email, picture } = profileRes.data;
+
+//         console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookUserId})`);
+
+//         // ── Retrieve PSID using user's access token ───────────
+//         let psid = '';
+//         try {
+//             const psidRes = await axios.get(
+//                 `https://graph.facebook.com/v19.0/${facebookUserId}`,
+//                 { params: { fields: 'id, email, picture', access_token: accessToken } }
+//             );
+//             psid = psidRes.data?.id?.data?.[0]?.id || '';
+//             if (psid) {
+//                 console.log(`[EcoFin] ✅ PSID retrieved: ${psid}`);
+//             } else {
+//                 // Fallback: use facebook user ID as PSID
+//                 psid = facebookUserId;
+//                 console.log(`[EcoFin] ℹ️ Using facebookUserId as PSID: ${psid}`);
+//             }
+//         } catch (psidErr) {
+//             console.warn('[EcoFin] ⚠️ Could not retrieve PSID:', psidErr.response?.data || psidErr.message);
+//             // Fallback: use facebook user ID as PSID
+//             psid = facebookUserId;
+//             console.log(`[EcoFin] ℹ️ Using facebookUserId as PSID fallback: ${psid}`);
+//         }
+
+//         const existingUser = await getUserByFacebookId(facebookUserId);
+//         let userId;
+
+//         // If already logged in (email user connecting Messenger)
+//         if (req.session.loggedIn && req.session.userId) {
+//             userId = req.session.userId;
+//             await updateUser(userId, {
+//                 facebook_id:         facebookUserId,
+//                 psid:                psid || '',
+//                 messenger_connected: !!psid,
+//                 email:               email || '',
+//             });
+//             console.log(`[EcoFin] ✅ Messenger linked to existing user: ${userId}`);
+//         } else if (existingUser) {
+//             userId = existingUser.id;
+//             await updateUser(userId, {
+//                 name,
+//                 facebook_id:         facebookUserId,
+//                 psid:                psid || existingUser.psid || '',
+//                 messenger_connected: !!psid,
+//                 email:               email || '',
+//             });
+//             console.log(`[EcoFin] ✅ Existing Facebook user updated: ${userId}`);
+//         } else {
+//             userId = `fb_${facebookUserId}`;
+//             await saveUser(userId, {
+//                 name,
+//                 email:               email || '',
+//                 facebook_id:         facebookUserId,
+//                 psid:                psid || '',
+//                 whatsapp:            '',
+//                 location:            'Philippines',
+//                 total_catches:       0,
+//                 fishing_hours:       0,
+//                 achievements:        0,
+//                 success_rate:        0,
+//                 member_since:        new Date().toLocaleDateString('en-US', {
+//                     month: 'long', year: 'numeric'
+//                 }),
+//                 messenger_connected: !!psid,
+//                 whatsapp_connected:  false,
+//             });
+//             console.log(`[EcoFin] ✅ New Facebook user created: ${userId}`);
+//         }
+
+//         req.session.userId   = userId;
+//         req.session.userName = name;
+//         req.session.loggedIn = true;
+
+//         // ── Send login notification to Messenger and/or WhatsApp ──
+//         // const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
+//         // if (psid) {
+//         //     await sendMessengerMessage(psid, fbLoginMsg);
+//         //     await sendWelcomeButtons(psid);
+//         // }
+
+//         // const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
+//         // if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
+//         //     await sendWhatsAppMessage(fbUserData.whatsapp, fbLoginMsg);
+//         //     await sendWhatsAppMenu(fbUserData.whatsapp);
+//         // }
+        
+//         // res.redirect('/dashboard.html');
+
+        
+
+
+//         req.session.save(() => {
+//             console.log('SESSION AFTER SAVE:', req.session);
+//             res.redirect('/dashboard.html');
+//         });
+
+
+//     } catch (err) {
+//         console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
+//         res.redirect('/login.html?error=failed');
+//         console.error('[EcoFin FULL ERROR]', err.response?.data);
+//     }
+// });
 app.get('/auth/facebook/callback', async (req, res) => {
     console.log('================================');
-        console.log('FACEBOOK CALLBACK HIT');
-        console.log('TIME:', new Date().toISOString());
-        console.log('CODE:', req.query.code);
-        console.log('================================');
+    console.log('FACEBOOK CALLBACK HIT');
+    console.log('TIME:', new Date().toISOString());
+    console.log('CODE:', req.query.code);
+    console.log('================================');
+
+    // 1. CRITICAL: Check if this session is already authorized or in mid-login sequence
+    if (req.session && (req.session.loggedIn || req.session.userId)) {
+        console.log(`[EcoFin] 🚀 Session already exists for ${req.session.userId}. Bypassing exchange.`);
+        return res.redirect('/dashboard.html');
+    }
 
     const code = req.query.code;
 
     console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
     console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
-
+    
     if (!code) {
         console.warn('[EcoFin] ⚠️ No code received — user may have cancelled login');
         return res.redirect('/login.html?error=cancelled');
@@ -192,21 +342,17 @@ app.get('/auth/facebook/callback', async (req, res) => {
             if (psid) {
                 console.log(`[EcoFin] ✅ PSID retrieved: ${psid}`);
             } else {
-                // Fallback: use facebook user ID as PSID
                 psid = facebookUserId;
                 console.log(`[EcoFin] ℹ️ Using facebookUserId as PSID: ${psid}`);
             }
         } catch (psidErr) {
             console.warn('[EcoFin] ⚠️ Could not retrieve PSID:', psidErr.response?.data || psidErr.message);
-            // Fallback: use facebook user ID as PSID
             psid = facebookUserId;
-            console.log(`[EcoFin] ℹ️ Using facebookUserId as PSID fallback: ${psid}`);
         }
 
         const existingUser = await getUserByFacebookId(facebookUserId);
         let userId;
 
-        // If already logged in (email user connecting Messenger)
         if (req.session.loggedIn && req.session.userId) {
             userId = req.session.userId;
             await updateUser(userId, {
@@ -252,34 +398,26 @@ app.get('/auth/facebook/callback', async (req, res) => {
         req.session.userName = name;
         req.session.loggedIn = true;
 
-        // ── Send login notification to Messenger and/or WhatsApp ──
-        // const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
-        // if (psid) {
-        //     await sendMessengerMessage(psid, fbLoginMsg);
-        //     await sendWelcomeButtons(psid);
-        // }
-
-        // const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
-        // if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
-        //     await sendWhatsAppMessage(fbUserData.whatsapp, fbLoginMsg);
-        //     await sendWhatsAppMenu(fbUserData.whatsapp);
-        // }
-        
-        // res.redirect('/dashboard.html');
-
-        
-
-
-        req.session.save(() => {
+        req.session.save((saveErr) => {
+            if (saveErr) console.error('[EcoFin] Session save error:', saveErr);
             console.log('SESSION AFTER SAVE:', req.session);
-            res.redirect('/dashboard.html');
+            return res.redirect('/dashboard.html');
         });
 
-
     } catch (err) {
+        const errorData = err.response?.data?.error || {};
+        
+        // 2. CRITICAL GUEST PASS: If this hit failed ONLY because a twin request used the code first,
+        // but our session data is populated, redirect to dashboard instead of failing out!
+        if (errorData.code === 100 && errorData.error_subcode === 36009 && req.session?.userId) {
+            console.log('[EcoFin] ℹ️ Caught double-submit token consumption error. Session exists; redirecting safely.');
+            req.session.loggedIn = true;
+            return res.redirect('/dashboard.html');
+        }
+
         console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
-        res.redirect('/login.html?error=failed');
         console.error('[EcoFin FULL ERROR]', err.response?.data);
+        res.redirect('/login.html?error=failed');
     }
 });
 
