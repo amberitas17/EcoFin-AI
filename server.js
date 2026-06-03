@@ -251,6 +251,7 @@ app.get('/auth/facebook/callback', async (req, res) => {
     } catch (err) {
         console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
         res.redirect('/login.html?error=failed');
+        console.error('[EcoFin FULL ERROR]', err.response?.data);
     }
 });
 
