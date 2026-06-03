@@ -39,11 +39,10 @@ app.use(cors({
 }));
 
 app.use(bodyParser.json());
-app.use(express.static(__dirname));
 app.set('trust proxy', 1);
-
-// ─── Session Middleware ───────────────────────────
+app.use(cookieParser('ecofin-secret-key')); // Use the exact same secret here
 app.use(session({
+    name: 'ecofin.sid',
     secret: 'ecofin-secret-key',
     resave: false,
     saveUninitialized: false,
@@ -52,11 +51,12 @@ app.use(session({
         secure: true,
         httpOnly: true,
         sameSite: 'none',
-        maxAge: 24 * 60 * 60 * 1000 // 1 day expiration (prevents session dropping instantly)
+        maxAge: 24 * 60 * 60 * 1000 // 1 day expiration
     }
 }));
-// Place this right before your session middleware config
-app.use(cookieParser());
+app.use(express.static(__dirname));
+
+
 
 app.use('/webhook', webhookRoute);
 
