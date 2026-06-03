@@ -247,16 +247,21 @@ app.get('/auth/facebook/callback', async (req, res) => {
 
         // ── Send login notification to Messenger and/or WhatsApp ──
         const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
-        if (psid) {
-            await sendMessengerMessage(psid, fbLoginMsg);
-            await sendWelcomeButtons(psid);
-        }
+        // if (psid) {
+        //     await sendMessengerMessage(psid, fbLoginMsg);
+        //     await sendWelcomeButtons(psid);
+        // }
 
         const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
         if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
             await sendWhatsAppMessage(fbUserData.whatsapp, fbLoginMsg);
             await sendWhatsAppMenu(fbUserData.whatsapp);
         }
+        console.log('================================');
+        console.log('FACEBOOK CALLBACK HIT');
+        console.log('TIME:', new Date().toISOString());
+        console.log('CODE:', req.query.code);
+        console.log('================================');
 
         // res.redirect('/dashboard.html');
 
