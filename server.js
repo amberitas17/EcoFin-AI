@@ -35,7 +35,11 @@ app.use(session({
     secret: 'ecofin-secret-key',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 24 * 60 * 60 * 1000 }
+    cookie: { 
+        secure: true,        // ✅ REQUIRED on Render (HTTPS)
+        httpOnly: true,
+        sameSite: 'none'     // ✅ REQUIRED for OAuth
+    }
 }));
 
 app.use('/webhook', webhookRoute);
@@ -246,7 +250,14 @@ app.get('/auth/facebook/callback', async (req, res) => {
             await sendWhatsAppMenu(fbUserData.whatsapp);
         }
 
-        res.redirect('/dashboard.html');
+        // res.redirect('/dashboard.html');
+
+        
+        req.session.save(() => {
+            console.log('[EcoFin] ✅ Session saved:', req.session);
+            res.redirect('/dashboard.html');
+        });
+
 
     } catch (err) {
         console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
@@ -613,6 +624,7 @@ app.post('/auth/whatsapp/callback', async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 
 app.get('/api/me', async (req, res) => {
+    console.log('[EcoFin] SESSION CHECK:', req.session);
     if (!req.session.loggedIn) return res.status(401).json({ error: 'Not logged in' });
 
     try {
