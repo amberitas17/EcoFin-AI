@@ -315,16 +315,20 @@ app.get('/auth/facebook/callback', async (req, res) => {
 
     const code = req.query.code;
 
-    // 2. CRITICAL: If this exact code was already successfully processed by Hit #1, 
-    // immediately force approval and redirect them forward.
+    // 1. If this code was already handled, save the current session context BEFORE redirecting
     if (code && processedCodes.has(code)) {
-        console.log(`[EcoFin] 🛡️ Blocked delayed duplicate hit for code. Forcing redirect to dashboard.`);
-        return res.redirect('/dashboard.html');
+        console.log(`[EcoFin] 🛡️ Blocked delayed duplicate hit for code. Preserving session and forcing dashboard.`);
+        return req.session.save(() => {
+            res.redirect('/dashboard.html');
+        });
     }
 
+    // 2. If the user session already exists, save it before moving along
     if (req.session && (req.session.loggedIn || req.session.userId)) {
         console.log(`[EcoFin] 🚀 Session already exists for ${req.session.userId}. Bypassing exchange.`);
-        return res.redirect('/dashboard.html');
+        return req.session.save(() => {
+            res.redirect('/dashboard.html');
+        });
     }
 
     console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
@@ -356,7 +360,6 @@ app.get('/auth/facebook/callback', async (req, res) => {
 
         console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookUserId})`);
 
-        // ── Retrieve PSID using user's access token ───────────
         let psid = '';
         try {
             const psidRes = await axios.get(
@@ -364,14 +367,7 @@ app.get('/auth/facebook/callback', async (req, res) => {
                 { params: { fields: 'id, email, picture', access_token: accessToken } }
             );
             psid = psidRes.data?.id?.data?.[0]?.id || '';
-            if (psid) {
-                console.log(`[EcoFin] ✅ PSID retrieved: ${psid}`);
-            } else {
-                psid = facebookUserId;
-                console.log(`[EcoFin] ℹ️ Using facebookUserId as PSID: ${psid}`);
-            }
         } catch (psidErr) {
-            console.warn('[EcoFin] ⚠️ Could not retrieve PSID:', psidErr.response?.data || psidErr.message);
             psid = facebookUserId;
         }
 
@@ -416,9 +412,10 @@ app.get('/auth/facebook/callback', async (req, res) => {
             });
         }
 
-        // 3. Mark code as successfully used right before saving the session
+        // Cache the processed code
         processedCodes.set(code, Date.now());
 
+        // Map the authentication tokens to the user context
         req.session.userId   = userId;
         req.session.userName = name;
         req.session.loggedIn = true;
@@ -432,10 +429,19 @@ app.get('/auth/facebook/callback', async (req, res) => {
     } catch (err) {
         const errorData = err.response?.data?.error || {};
         
-        // Secondary safety guard
+        // 3. Fallback interceptor: Must also explicitly update and save session variables
         if ((errorData.code === 100 && errorData.error_subcode === 36009) || processedCodes.has(code)) {
-            console.log('[EcoFin] ℹ️ Handled consumed token on fallback interceptor. Redirecting.');
-            return res.redirect('/dashboard.html');
+            console.log('[EcoFin] ℹ️ Handled consumed token on fallback interceptor. Retaining session and redirecting.');
+            
+            // Re-verify backup context if thread lost track
+            if (facebookUserId) {
+                req.session.userId = `fb_${facebookUserId}`;
+                req.session.loggedIn = true;
+            }
+
+            return req.session.save(() => {
+                res.redirect('/dashboard.html');
+            });
         }
 
         console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
