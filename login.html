@@ -118,15 +118,24 @@
             .catch(() => {});*/
 
         // ONLY run this on login.html
-        fetch('/api/me', {
-            credentials: 'include'
-        })
-            .then(res => {
-                if (res.ok) {
+            window.addEventListener('load', async () => {
+        try {
+            const res = await fetch('/api/me', {
+                credentials: 'include'
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+
+                // extra safety: ensure real session exists
+                if (data && data.id) {
                     window.location.href = '/dashboard.html';
                 }
-            })
-            .catch(() => {});
+            }
+        } catch (err) {
+            console.log('Session check failed:', err);
+        }
+    });
     </script>
 </body>
 </html>

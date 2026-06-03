@@ -75,198 +75,120 @@ app.get('/dashboard.html', (req, res) => {
 
 
 app.get('/auth/facebook', (req, res) => {
-    // CRITICAL: Force the browser to completely ignore its cache for this request
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
-    const stringifiedParams = queryString.stringify({
+    const params = new URLSearchParams({
         client_id: process.env.APP_ID,
         redirect_uri: process.env.REDIRECT_URI,
-        scope: ['public_profile', 'email'].join(','),
+        scope: 'public_profile,email',
         response_type: 'code',
-        auth_type: 'rerequest', // Forces a fresh authorization block
-        display: 'popup'
+        auth_type: 'rerequest'
     });
 
-    const facebookLoginUrl = `https://www.facebook.com/v19.0/dialog/oauth?${stringifiedParams}`;
-    res.redirect(facebookLoginUrl);
+    const url = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
+    return res.redirect(url);
 });
 // 1. Put this memory cache near the top of your server file (outside the routes)
-const processedCodes = new Map();
-
-// Clean up memory leaks by wiping old codes after 10 seconds
-setInterval(() => {
-    const now = Date.now();
-    for (const [code, timestamp] of processedCodes.entries()) {
-        if (now - timestamp > 10000) processedCodes.delete(code);
-    }
-}, 10000);
-
-// ... your other code ...
+const processedCodes = new Set();
 
 app.get('/auth/facebook/callback', async (req, res) => {
-    console.log('================================');
-    console.log('FACEBOOK CALLBACK HIT');
-    console.log('TIME:', new Date().toISOString());
-    console.log('CODE:', req.query.code);
-    console.log('================================');
-
     const code = req.query.code;
-    let facebookUserId = null;
-    let name = null;
+
+    console.log('FACEBOOK CALLBACK:', code);
 
     if (!code) {
-        console.warn('[EcoFin] ⚠️ No code received — user may have cancelled login');
         return res.redirect('/login.html?error=cancelled');
     }
 
-        // 1. CRITICAL CONCURRENCY LOCK: Check and lock immediately!
+    // 🚨 BLOCK DOUBLE EXECUTION
     if (processedCodes.has(code)) {
-        console.log(`[EcoFin] 🛡️ Duplicate callback blocked`);
+        console.log('Duplicate OAuth callback blocked');
 
-        // ✅ wait for original request to finish writing session
-        return setTimeout(() => {
-            if (req.session && req.session.userId) {
-                req.session.loggedIn = true;
-            }
+        if (req.session?.loggedIn) {
+            return res.redirect('/dashboard.html');
+        }
 
-            req.session.save((err) => {
-                if (err) console.error('[EcoFin] Session save error (race path):', err);
-
-                res.setHeader('Cache-Control', 'no-store');
-                return res.redirect('/dashboard.html');
-            });
-        }, 150);
+        return res.redirect('/login.html');
     }
 
-
-    // 2. Lock it right here BEFORE any asynchronous database or API calls can execute
-    processedCodes.set(code, Date.now());
-
-    if (req.session && (req.session.loggedIn || req.session.userId)) {
-        console.log(`[EcoFin] 🚀 Session already exists for ${req.session.userId}. Bypassing exchange.`);
-        return req.session.save(() => {
-            res.redirect('/dashboard.html');
-        });
-    }
-
-    console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
-    console.log('[EcoFin] Code received: YES');
+    processedCodes.add(code);
 
     try {
+        // 1. Exchange code for token
         const tokenRes = await axios.get(
             'https://graph.facebook.com/v19.0/oauth/access_token',
             {
                 params: {
-                    client_id:     process.env.APP_ID,
+                    client_id: process.env.APP_ID,
                     client_secret: process.env.APP_SECRET,
-                    redirect_uri:  process.env.REDIRECT_URI,
-                    code,
+                    redirect_uri: process.env.REDIRECT_URI,
+                    code
                 }
             }
         );
+
         const accessToken = tokenRes.data.access_token;
 
-        const profileRes = await axios.get('https://graph.facebook.com/me', {
-            params: { access_token: accessToken, fields: 'id,name,email,picture' }
-        });
-        
-        facebookUserId = profileRes.data.id;
-        name = profileRes.data.name;
+        // 2. Get profile
+        const profileRes = await axios.get(
+            'https://graph.facebook.com/me',
+            {
+                params: {
+                    access_token: accessToken,
+                    fields: 'id,name,email'
+                }
+            }
+        );
+
+        const facebookUserId = profileRes.data.id;
+        const name = profileRes.data.name;
         const email = profileRes.data.email;
 
-        console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookUserId})`);
+        console.log('Facebook user:', name);
 
-        let psid = '';
-        try {
-            const psidRes = await axios.get(
-                `https://graph.facebook.com/v19.0/${facebookUserId}`,
-                { params: { fields: 'id, email, picture', access_token: accessToken } }
-            );
-            psid = psidRes.data?.id?.data?.[0]?.id || '';
-        } catch (psidErr) {
-            psid = facebookUserId;
-        }
-
-        const existingUser = await getUserByFacebookId(facebookUserId);
+        // 3. Find or create user
+        let user = await getUserByFacebookId(facebookUserId);
         let userId;
 
-        if (req.session.loggedIn && req.session.userId) {
-            userId = req.session.userId;
-            await updateUser(userId, {
-                facebook_id:         facebookUserId,
-                psid:                psid || '',
-                messenger_connected: !!psid,
-                email:               email || '',
-            });
-        } else if (existingUser) {
-            userId = existingUser.id;
+        if (user) {
+            userId = user.id;
             await updateUser(userId, {
                 name,
-                facebook_id:         facebookUserId,
-                psid:                psid || existingUser.psid || '',
-                messenger_connected: !!psid,
-                email:               email || '',
+                facebook_id: facebookUserId,
+                email
             });
         } else {
             userId = `fb_${facebookUserId}`;
+
             await saveUser(userId, {
                 name,
-                email:               email || '',
-                facebook_id:         facebookUserId,
-                psid:                psid || '',
-                whatsapp:            '',
-                location:            'Philippines',
-                total_catches:       0,
-                fishing_hours:       0,
-                achievements:        0,
-                success_rate:        0,
-                member_since:        new Date().toLocaleDateString('en-US', {
-                    month: 'long', year: 'numeric'
-                }),
-                messenger_connected: !!psid,
-                whatsapp_connected:  false,
+                email,
+                facebook_id: facebookUserId,
+                location: 'Philippines',
+                messenger_connected: false,
+                whatsapp_connected: false,
+                total_catches: 0
             });
         }
 
-        // 3. Session attributes setup
-        req.session.userId   = userId;
+        // 4. SESSION (CRITICAL PART)
+        req.session.userId = userId;
         req.session.userName = name;
         req.session.loggedIn = true;
 
-        req.session.save((saveErr) => {
-            if (saveErr) {
-                console.error('[EcoFin] Session save error:', saveErr);
-                return res.redirect('/login.html?error=session');
-            }
-
-            console.log('✅ SESSION AFTER SAVE:', req.session);
-
-            // ✅ prevent caching issues
-            res.setHeader('Cache-Control', 'no-store');
-            return res.redirect('/dashboard.html');
+        await new Promise((resolve, reject) => {
+            req.session.save(err => {
+                if (err) return reject(err);
+                resolve();
+            });
         });
 
+        console.log('SESSION SAVED:', req.session);
+
+        // 5. FINAL REDIRECT
+        return res.redirect('/dashboard.html');
+
     } catch (err) {
-        const errorData = err.response?.data?.error || {};
-        
-        // Secondary fallback checking
-        if (errorData.code === 100 && errorData.error_subcode === 36009) {
-            console.log('[EcoFin] ℹ️ Handled consumed token on fallback interceptor. Retaining session and redirecting.');
-            
-            if (facebookUserId) {
-                req.session.userId = `fb_${facebookUserId}`;
-                req.session.loggedIn = true;
-            }
-
-            return req.session.save(() => {
-                res.redirect('/dashboard.html');
-            });
-        }
-
-        console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
-        res.redirect('/login.html?error=failed');
+        console.error('FACEBOOK AUTH ERROR:', err.response?.data || err.message);
+        return res.redirect('/login.html?error=failed');
     }
 });
 
@@ -441,24 +363,23 @@ app.get('/auth/verify', (req, res) => {
 // ─────────────────────────────────────────────────────────────
 
 app.get('/api/me', async (req, res) => {
-    
-    console.log('[EcoFin] SESSION CHECK:', req.session);
-    console.log('[EcoFin] COOKIES:', req.headers.cookie); // ✅ ADD THIS
+    console.log('SESSION:', req.session);
 
-    if (!req.session.loggedIn) return res.status(401).json({ error: 'Not logged in' });
-
-    try {
-        const { data, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', req.session.userId)
-            .single();
-
-        if (error || !data) return res.status(404).json({ error: 'User not found' });
-        res.json({ id: req.session.userId, ...data });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+    if (!req.session?.loggedIn) {
+        return res.status(401).json({ error: 'Not logged in' });
     }
+
+    const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', req.session.userId)
+        .single();
+
+    if (error || !data) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json(data);
 });
 
 
