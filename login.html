@@ -118,19 +118,15 @@
             .catch(() => {});*/
 
         // ONLY run this on login.html
-        async function checkExistingSession() {
-            try {
-                const res = await fetch('/api/me', { credentials: 'include' });
+        fetch('/api/me', {
+            credentials: 'include'
+        })
+            .then(res => {
                 if (res.ok) {
-                    // User has a valid cookie already, skip login form
                     window.location.href = '/dashboard.html';
                 }
-                // If NOT res.ok, do nothing! Let them stay on login.html to click the button.
-            } catch (err) {
-                console.error("Session check skipped:", err);
-            }
-        }
-        checkExistingSession();
+            })
+            .catch(() => {});
     </script>
 </body>
 </html>
