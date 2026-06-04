@@ -161,40 +161,47 @@ app.post('/auth/login', async (req, res) => {
 
         console.log(`[EcoFin] ✅ Email login: ${email}`);
 
+        // Use Supabase user ID as the primary key for consistency
+        const userId = data.user.id;
+
+        // Check if user profile exists in custom users table
         const { data: userData } = await supabase
             .from('users')
             .select('*')
-            .eq('email', email)
+            .eq('id', userId)
             .single();
 
-        let userId;
-
-        if (userData) {
-            userId = userData.id;
-        } else {
-            userId = `email_${data.user.id}`;
+        if (!userData) {
+            // User profile doesn't exist yet - create it
             const name = data.user.user_metadata?.name || email.split('@')[0];
-            await saveUser(userId, {
-                name,
-                email,
-                facebook_id:         null,
-                psid:                null,
-                whatsapp:            null,
-                location:            'Philippines',
-                total_catches:       0,
-                fishing_hours:       0,
-                achievements:        0,
-                success_rate:        0,
-                member_since:        new Date().toLocaleDateString('en-US', {
-                    month: 'long', year: 'numeric'
-                }),
-                messenger_connected: false,
-                whatsapp_connected:  false,
-            });
+            try {
+                await saveUser(userId, {
+                    name,
+                    email,
+                    facebook_id:         null,
+                    psid:                null,
+                    whatsapp:            null,
+                    location:            'Philippines',
+                    total_catches:       0,
+                    fishing_hours:       0,
+                    achievements:        0,
+                    success_rate:        0,
+                    member_since:        new Date().toLocaleDateString('en-US', {
+                        month: 'long', year: 'numeric'
+                    }),
+                    messenger_connected: false,
+                    whatsapp_connected:  false,
+                });
+                console.log(`[EcoFin] ✅ Created user profile during login: ${userId}`);
+            } catch (dbErr) {
+                console.error('[EcoFin] ⚠️ Failed to create user profile during login:', dbErr.message);
+                // Continue with session - user exists in auth system
+            }
         }
 
     req.session.userId   = userId;
     req.session.userName = userData?.name || data.user.user_metadata?.name || email.split('@')[0];
+    req.session.userEmail = email;
     req.session.loggedIn = true;
 
     console.log(`[EcoFin] ✅ Session initialized for ${userId}`);
