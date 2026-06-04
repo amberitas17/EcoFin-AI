@@ -86,8 +86,17 @@ app.get('/auth/facebook', (req, res) => {
     const url = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
     return res.redirect(url);
 });
-// 1. Put this memory cache near the top of your server file (outside the routes)
-const processedCodes = new Set();
+
+// Time-based cache for OAuth codes (expires after 5 minutes)
+const processedCodes = new Map();
+setInterval(() => {
+    const now = Date.now();
+    for (const [code, timestamp] of processedCodes.entries()) {
+        if (now - timestamp > 5 * 60 * 1000) { // 5 minutes
+            processedCodes.delete(code);
+        }
+    }
+}, 60 * 1000); // Clean up every minute
 
 app.get('/auth/facebook/callback', async (req, res) => {
     const code = req.query.code;
@@ -98,18 +107,19 @@ app.get('/auth/facebook/callback', async (req, res) => {
         return res.redirect('/login.html?error=cancelled');
     }
 
-    // 🚨 BLOCK DOUBLE EXECUTION
+    // Check if code was recently processed (within last 30 seconds)
     if (processedCodes.has(code)) {
-        console.log('Duplicate OAuth callback blocked');
-
-        if (req.session?.loggedIn) {
-            return res.redirect('/dashboard.html');
+        const timeSinceProcessing = Date.now() - processedCodes.get(code);
+        if (timeSinceProcessing < 30 * 1000) { // 30 seconds
+            console.log('Duplicate OAuth callback blocked (processed recently)');
+            if (req.session?.loggedIn) {
+                return res.redirect('/dashboard.html');
+            }
+            return res.redirect('/login.html');
         }
-
-        return res.redirect('/login.html');
     }
 
-    processedCodes.add(code);
+    processedCodes.set(code, Date.now());
 
     try {
         // 1. Exchange code for token
