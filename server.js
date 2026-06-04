@@ -23,12 +23,27 @@ const app = express();
 app.use(bodyParser.json());
 app.use(express.static(__dirname));
 
-// ─── Session Middleware ───────────────────────────────────────
+// // ─── Session Middleware ───────────────────────────────────────
+// app.use(session({
+//     secret: 'ecofin-secret-key',
+//     resave: false,
+//     saveUninitialized: false,
+//     cookie: { maxAge: 24 * 60 * 60 * 1000 }
+// }));
+
+app.set('trust proxy', 1);
+
 app.use(session({
-    secret: 'ecofin-secret-key',
+    secret: process.env.SESSION_SECRET || 'ecofin-secret-key',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 24 * 60 * 60 * 1000 }
+    proxy: true,
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        sameSite: 'lax',
+        maxAge: 24 * 60 * 60 * 1000
+    }
 }));
 
 app.use('/webhook', webhookRoute);
@@ -73,6 +88,21 @@ app.get('/auth/callback', async (req, res) => {
         console.error('[EcoFin] ❌ No code received in Facebook callback');
         return res.redirect('/login.html?error=oauth_failed');
     }
+
+        console.log('===== SESSION BEFORE SAVE =====');
+    console.log(req.session);
+
+    req.session.save((err) => {
+        if (err) {
+            console.error('Session save failed:', err);
+            return res.redirect('/login.html?error=session_failed');
+        }
+
+        console.log('===== SESSION SAVED =====');
+        console.log(req.session);
+
+        res.redirect('/dashboard.html');
+    });
     
 
     try {
@@ -406,42 +436,39 @@ app.get('/auth/verify-callback', async (req, res) => {
 // E. Get Current Logged-In User
 // ─────────────────────────────────────────────────────────────
 
-// app.get('/api/me', async (req, res) => {
-//     console.log('SESSION:', req.session);
-
-//     if (!req.session?.loggedIn) {
-//         return res.status(401).json({ error: 'Not logged in' });
-//     }
-
-//     const { data, error } = await supabase
-//         .from('users')
-//         .select('*')
-//         .eq('id', req.session.userId)
-//         .single();
-
-//     if (error || !data) {
-//         return res.status(404).json({ error: 'User not found' });
-//     }
-
-//     res.json(data);
-// });
 app.get('/api/me', async (req, res) => {
-    if (!req.session.loggedIn) return res.status(401).json({ error: 'Not logged in' });
+    console.log('SESSION:', req.session);
 
-    try {
-        // Query the Supabase internal auth management system instead of a custom table
-        const { data: { user }, error } = await supabase.auth.admin.getUserById(req.session.userId);
+    
+    const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', req.session.userId)
+        .single();
 
-        if (error || !user) {
-            return res.status(404).json({ error: 'User not found in authentication records' });
-        }
-
-        // Returns the full Supabase Auth user object (metadata, email, provider data, etc.)
-        res.json(user);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+    if (error || !data) {
+        return res.status(404).json({ error: 'User not found' });
     }
+
+    res.json(data);
 });
+// app.get('/api/me', async (req, res) => {
+//     if (!req.session.loggedIn) return res.status(401).json({ error: 'Not logged in' });
+
+//     try {
+//         // Query the Supabase internal auth management system instead of a custom table
+//         const { data: { user }, error } = await supabase.auth.admin.getUserById(req.session.userId);
+
+//         if (error || !user) {
+//             return res.status(404).json({ error: 'User not found in authentication records' });
+//         }
+
+//         // Returns the full Supabase Auth user object (metadata, email, provider data, etc.)
+//         res.json(user);
+//     } catch (err) {
+//         res.status(500).json({ error: err.message });
+//     }
+// });
 
 
 // ─────────────────────────────────────────────────────────────
