@@ -38,14 +38,14 @@ app.use(cookieParser('ecofin-secret-key')); // Use the exact same secret here
 app.use(session({
     name: 'ecofin.sid',
     secret: 'ecofin-secret-key',
-    resave: false,
+    resave: true,
     saveUninitialized: false,
     rolling: true,
     proxy: true,
     cookie: {
         secure: true,
         httpOnly: true,
-        sameSite: 'none',
+        sameSite: 'lax',
         maxAge: 24 * 60 * 60 * 1000 // 1 day expiration
     }
 }));

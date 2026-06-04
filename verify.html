@@ -15,28 +15,38 @@
         </div>
     </div>
     <script>
-        const hash   = window.location.hash.substring(1);
-        const params = new URLSearchParams(hash);
-        const error  = params.get('error');
-        const errorDesc = params.get('error_description');
-        const type   = params.get('type');
-        const accessToken = params.get('access_token');
+    const hash   = window.location.hash.substring(1);
+    const params = new URLSearchParams(hash);
+    const error  = params.get('error');
+    const errorDesc = params.get('error_description');
+    const type   = params.get('type');
+    const accessToken = params.get('access_token');
 
-        if (error) {
-            document.getElementById('statusMsg').innerHTML =
-                `<span style="color:red;">❌ ${errorDesc || 'Verification failed.'}</span><br><br>
-                 <a href="/signup.html" style="color:#4CAF50;">Try signing up again</a>`;
-        } else if (accessToken && type === 'signup') {
-            document.getElementById('statusMsg').innerHTML = '✅ Email verified! Redirecting to login...';
-            setTimeout(() => {
-                window.location.href = '/login.html?verified=true';
-            }, 1500);
-        } else {
-            document.getElementById('statusMsg').innerHTML = '✅ Verified! Redirecting...';
-            setTimeout(() => {
-                window.location.href = '/login.html?verified=true';
-            }, 1500);
-        }
-    </script>
+    // Wipe any query/hash parameters from the URL bar immediately 
+    // to stop users from accidentally re-triggering authentication on refresh
+    if (window.location.search.includes('code=') || window.location.hash) {
+        const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+        window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+    }
+
+    if (error) {
+        document.getElementById('statusMsg').innerHTML =
+            `<span style="color:red;">❌ ${errorDesc || 'Verification failed.'}</span><br><br>
+             <a href="/signup.html" style="color:#4CAF50;">Try signing up again</a>`;
+    } else if (accessToken && type === 'signup') {
+        document.getElementById('statusMsg').innerHTML = '✅ Email verified! Redirecting to login...';
+        setTimeout(() => {
+            window.location.href = '/login.html?verified=true';
+        }, 1500);
+    } else {
+        // This handles successful Facebook OAuth or general active sessions
+        document.getElementById('statusMsg').innerHTML = '✅ Access confirmed! Redirecting to your dashboard...';
+        setTimeout(() => {
+            // CHANGE THIS: Route directly to your main dashboard/app page instead of login.html
+            window.location.href = '/dashboard.html'; 
+        }, 1500);
+    }
+</script>
+
 </body>
 </html>
