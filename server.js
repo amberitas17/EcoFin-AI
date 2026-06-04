@@ -119,9 +119,6 @@ app.get('/auth/callback', async (req, res) => {
         let userId;
         const existingUser = await getUserByFacebookId(facebookUserId); 
         
-        let user = null;
-        const existingUser = await getUserByFacebookId(fbUser.id); 
-        
         if (!existingUser) {
             const userId = `fb_${fbUser.id}`;
             try {
