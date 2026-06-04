@@ -147,8 +147,6 @@ app.get('/auth/callback', async (req, res) => {
                 member_since:        new Date().toLocaleDateString('en-US', {
                     month: 'long', year: 'numeric'
                 }),
-                messenger_connected: !!psid,
-                whatsapp_connected:  false,
             });
             console.log(`[EcoFin] ✅ New Facebook user created: ${userId}`);
         }
@@ -156,13 +154,6 @@ app.get('/auth/callback', async (req, res) => {
         req.session.userId   = userId;
         req.session.userName = name;
         req.session.loggedIn = true;
-
-        // ── Send login notification to Messenger and/or WhatsApp ──
-        const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
-        if (psid) {
-            await sendMessengerMessage(psid, fbLoginMsg);
-            await sendWelcomeButtons(psid);
-        }
 
         const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
         if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
@@ -221,8 +212,6 @@ app.post('/auth/login', async (req, res) => {
                     name,
                     email,
                     facebook_id:         null,
-                    psid:                null,
-                    whatsapp:            null,
                     location:            'Philippines',
                     total_catches:       0,
                     fishing_hours:       0,
