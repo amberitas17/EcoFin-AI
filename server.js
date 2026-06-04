@@ -104,31 +104,35 @@ app.get('/auth/callback', async (req, res) => {
     const facebookId =
         user.identities?.[0]?.identity_data?.id || null;
 
-    const userId = `fb_${facebookId || user.id}`;
+    const userId = user.id; // Use Supabase user ID directly for consistency
 
     console.log('OAuth USER:', user);
 
-    const { error: dbError } = await supabase
-        .from('users')
-        .upsert({
-            id: userId,
-            name: user.user_metadata?.full_name || user.user_metadata?.name,
-            email: user.email,
-            facebook_id: facebookId,
-            psid: null,
-            whatsapp: null,
-            waba_id: null,
-            fishing_hours: 0,
-            achievements: 0,
-            success_rate: 0,
-            location: 'Philippines',
-            total_catches: 0
-        });
+    try {
+        const { error: dbError } = await supabase
+            .from('users')
+            .upsert({
+                id: userId,
+                name: user.user_metadata?.full_name || user.user_metadata?.name,
+                email: user.email,
+                facebook_id: facebookId,
+                psid: null,
+                whatsapp: null,
+                waba_id: null,
+                fishing_hours: 0,
+                achievements: 0,
+                success_rate: 0,
+                location: 'Philippines',
+                total_catches: 0
+            });
 
-    if (dbError) {
-        console.error('DATABASE ERROR:', dbError);
-    } else {
-        console.log('✅ User saved to DB');
+        if (dbError) {
+            console.error('DATABASE ERROR:', dbError);
+        } else {
+            console.log('✅ User saved to DB:', userId);
+        }
+    } catch (err) {
+        console.error('Database error during OAuth callback:', err.message);
     }
 
     req.session.userId = userId;
@@ -259,7 +263,7 @@ app.post('/auth/signup', async (req, res) => {
             password,
             options: {
                 data: { name },
-                emailRedirectTo: `${appUrl}/verify.html`,
+                emailRedirectTo: `${appUrl}/auth/verify-callback`,
             }
         });
 
@@ -271,26 +275,33 @@ app.post('/auth/signup', async (req, res) => {
             return res.status(400).json({ error: authError.message });
         }
 
-        const userId = `user_${data.user.id.replace(/-/g, '').slice(0, 12)}`;
+        // Use Supabase user ID as the primary key for consistency
+        const userId = data.user.id;
 
-        await saveUser(userId, {
-            name,
-            email,
-            facebook_id:         null,
-            psid:                null,
-            whatsapp:            null,
-            waba_id:             null,
-            location:            'Philippines',
-            total_catches:       0,
-            fishing_hours:       0,
-            achievements:        0,
-            success_rate:        0,
-            member_since:        new Date().toLocaleDateString('en-US', {
-                month: 'long', year: 'numeric'
-            }),
-            messenger_connected: false,
-            whatsapp_connected:  false,
-        });
+        try {
+            await saveUser(userId, {
+                name,
+                email,
+                facebook_id:         null,
+                psid:                null,
+                whatsapp:            null,
+                waba_id:             null,
+                location:            'Philippines',
+                total_catches:       0,
+                fishing_hours:       0,
+                achievements:        0,
+                success_rate:        0,
+                member_since:        new Date().toLocaleDateString('en-US', {
+                    month: 'long', year: 'numeric'
+                }),
+                messenger_connected: false,
+                whatsapp_connected:  false,
+            });
+            console.log(`[EcoFin] ✅ User profile saved during signup: ${userId}`);
+        } catch (dbErr) {
+            console.error('[EcoFin] ⚠️ Failed to save user profile during signup:', dbErr.message);
+            // Don't fail the entire signup - user can still verify and login
+        }
 
         console.log(`[EcoFin] ✅ New signup (pending verification): ${email} (${name})`);
         res.json({ success: true, pending: true });
@@ -308,6 +319,76 @@ app.post('/auth/signup', async (req, res) => {
 
 app.get('/auth/verify', (req, res) => {
     res.sendFile(__dirname + '/verify.html');
+});
+
+app.get('/auth/verify-callback', async (req, res) => {
+    // Supabase sends the token in the hash after email verification
+    // The browser will have the session token, but we need to establish it server-side
+    try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error || !session) {
+            console.error('[EcoFin] ⚠️ No session after email verification');
+            // Redirect to login with a message
+            return res.redirect('/login.html?verified=true');
+        }
+
+        const user = session.user;
+        const userId = user.id;
+
+        // Ensure user profile exists
+        const { data: userData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .single();
+
+        if (!userData) {
+            // Create user profile if it doesn't exist
+            const name = user.user_metadata?.name || user.email.split('@')[0];
+            try {
+                await saveUser(userId, {
+                    name,
+                    email: user.email,
+                    facebook_id:         null,
+                    psid:                null,
+                    whatsapp:            null,
+                    location:            'Philippines',
+                    total_catches:       0,
+                    fishing_hours:       0,
+                    achievements:        0,
+                    success_rate:        0,
+                    member_since:        new Date().toLocaleDateString('en-US', {
+                        month: 'long', year: 'numeric'
+                    }),
+                    messenger_connected: false,
+                    whatsapp_connected:  false,
+                });
+                console.log(`[EcoFin] ✅ Created user profile after email verification: ${userId}`);
+            } catch (dbErr) {
+                console.error('[EcoFin] ⚠️ Failed to create user profile:', dbErr.message);
+            }
+        }
+
+        // Establish server-side session
+        req.session.userId = userId;
+        req.session.userName = userData?.name || user.user_metadata?.name || user.email.split('@')[0];
+        req.session.userEmail = user.email;
+        req.session.loggedIn = true;
+
+        req.session.save((err) => {
+            if (err) {
+                console.error('[EcoFin] ❌ Session save error during verification:', err);
+                return res.redirect('/login.html?error=session_failed');
+            }
+            console.log(`[EcoFin] ✅ Session established after email verification: ${userId}`);
+            res.redirect('/dashboard.html');
+        });
+
+    } catch (err) {
+        console.error('[EcoFin] ❌ Email verification error:', err.message);
+        res.redirect('/login.html?error=verification_failed');
+    }
 });
 
 
