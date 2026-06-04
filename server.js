@@ -24,6 +24,9 @@ const queryString = require('querystring'); // Add this line at the top
 
 const app = express();
 
+// ─── Track processed OAuth codes to prevent duplicate processing ───────────────
+const processedCodes = new Set();
+
 // ─── CORS Setup (Allow Credentials) ───────────────
 app.use(cors({
     origin: process.env.APP_URL || 'https://ecofin-ai.onrender.com',
@@ -98,7 +101,17 @@ app.get('/auth/callback', async (req, res) => {
         return res.redirect('/login.html?error=no_code');
     }
 
+    // Prevent duplicate code processing
+    if (processedCodes.has(code)) {
+        console.warn('[EcoFin] ⚠️ Code already processed, rejecting duplicate');
+        return res.redirect('/dashboard.html'); // Silently redirect to dashboard
+    }
+
     try {
+        // Mark code as processed IMMEDIATELY to prevent race conditions
+        processedCodes.add(code);
+        console.log('[EcoFin] ✅ Code marked as processed');
+
         // Step 1: Exchange code with Facebook for access token (NOT with Supabase)
         console.log('[EcoFin] 🔄 Exchanging code with Facebook for access token...');
         const tokenRes = await axios.get('https://graph.facebook.com/v19.0/oauth/access_token', {
@@ -176,6 +189,15 @@ app.get('/auth/callback', async (req, res) => {
 
     } catch (err) {
         console.error('[EcoFin] ❌ Callback error:', err.message);
+        
+        // Log detailed error info for debugging
+        if (err.response) {
+            console.error('[EcoFin] ❌ Facebook API Response Status:', err.response.status);
+            console.error('[EcoFin] ❌ Facebook API Response Data:', JSON.stringify(err.response.data));
+        } else if (err.request) {
+            console.error('[EcoFin] ❌ No response from Facebook:', err.request);
+        }
+        
         res.redirect('/login.html?error=callback_error');
     }
 });
