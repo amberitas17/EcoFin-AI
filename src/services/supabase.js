@@ -7,11 +7,22 @@ const supabase = createClient(
 
 // ─── Save or update a user ────────────────────────────────────
 async function saveUser(userId, userData) {
-    const { error } = await supabase
-        .from('users')
-        .upsert({ id: userId, ...userData }, { onConflict: 'id' });
-    if (error) throw new Error(error.message);
-    console.log(`[Supabase] ✅ User saved: ${userId}`);
+    try {
+        const { data, error } = await supabase
+            .from('users')
+            .upsert({ id: userId, ...userData }, { onConflict: 'id' });
+        
+        if (error) {
+            console.error(`[Supabase] ❌ Upsert error for user ${userId}:`, error);
+            throw new Error(`Upsert failed: ${error.message}`);
+        }
+        
+        console.log(`[Supabase] ✅ User saved: ${userId}`, data);
+        return data;
+    } catch (err) {
+        console.error(`[Supabase] ❌ saveUser() exception for ${userId}:`, err.message);
+        throw err;
+    }
 }
 
 // ─── Get a user by their Messenger PSID ──────────────────────

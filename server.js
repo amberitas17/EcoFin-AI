@@ -109,7 +109,8 @@ app.get('/auth/callback', async (req, res) => {
     console.log('OAuth USER:', user);
 
     try {
-        const { error: dbError } = await supabase
+        console.log(`[EcoFin] 🔄 Attempting to save user profile during OAuth callback: ${userId}`);
+        const { data: upsertData, error: dbError } = await supabase
             .from('users')
             .upsert({
                 id: userId,
@@ -127,7 +128,7 @@ app.get('/auth/callback', async (req, res) => {
             });
 
         if (dbError) {
-            console.error('DATABASE ERROR:', dbError);
+            console.error('[EcoFin] ❌ DATABASE ERROR during OAuth:', dbError.message, dbError);
         } else {
             console.log('✅ User saved to DB:', userId);
         }
@@ -179,6 +180,7 @@ app.post('/auth/login', async (req, res) => {
             // User profile doesn't exist yet - create it
             const name = data.user.user_metadata?.name || email.split('@')[0];
             try {
+                console.log(`[EcoFin] 🔄 Attempting to create user profile during login: ${userId}`);
                 await saveUser(userId, {
                     name,
                     email,
@@ -198,7 +200,7 @@ app.post('/auth/login', async (req, res) => {
                 });
                 console.log(`[EcoFin] ✅ Created user profile during login: ${userId}`);
             } catch (dbErr) {
-                console.error('[EcoFin] ⚠️ Failed to create user profile during login:', dbErr.message);
+                console.error('[EcoFin] ❌ Failed to create user profile during login:', dbErr.message, dbErr);
                 // Continue with session - user exists in auth system
             }
         }
@@ -279,6 +281,7 @@ app.post('/auth/signup', async (req, res) => {
         const userId = data.user.id;
 
         try {
+            console.log(`[EcoFin] 🔄 Attempting to save user profile during signup: ${userId}`);
             await saveUser(userId, {
                 name,
                 email,
@@ -299,7 +302,7 @@ app.post('/auth/signup', async (req, res) => {
             });
             console.log(`[EcoFin] ✅ User profile saved during signup: ${userId}`);
         } catch (dbErr) {
-            console.error('[EcoFin] ⚠️ Failed to save user profile during signup:', dbErr.message);
+            console.error('[EcoFin] ❌ Failed to save user profile during signup:', dbErr.message, dbErr);
             // Don't fail the entire signup - user can still verify and login
         }
 
@@ -347,6 +350,7 @@ app.get('/auth/verify-callback', async (req, res) => {
             // Create user profile if it doesn't exist
             const name = user.user_metadata?.name || user.email.split('@')[0];
             try {
+                console.log(`[EcoFin] 🔄 Attempting to create user profile after email verification: ${userId}`);
                 await saveUser(userId, {
                     name,
                     email: user.email,
@@ -366,7 +370,7 @@ app.get('/auth/verify-callback', async (req, res) => {
                 });
                 console.log(`[EcoFin] ✅ Created user profile after email verification: ${userId}`);
             } catch (dbErr) {
-                console.error('[EcoFin] ⚠️ Failed to create user profile:', dbErr.message);
+                console.error('[EcoFin] ❌ Failed to create user profile after verification:', dbErr.message, dbErr);
             }
         }
 
