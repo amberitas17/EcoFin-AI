@@ -72,32 +72,29 @@ app.get('/dashboard.html', (req, res) => {
 });
 
 
-app.get('/auth/facebook', async (req, res) => {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'facebook',
-        options: {
-            flowType: 'pkce',
-            redirectTo: process.env.REDIRECT_URI,// e.g. https://yourapp.com/auth/callback
-        }
+app.get('/auth/facebook', (req, res) => {
+    const params = new URLSearchParams({
+        client_id: process.env.APP_ID,
+        redirect_uri: process.env.REDIRECT_URI,
+        scope: 'public_profile,email',
+        response_type: 'code',
+        auth_type: 'rerequest'
     });
 
-    if (error) {
-        console.error('OAuth error:', error.message);
-        return res.redirect('/login.html?error=oauth');
-    }
-
-    return res.redirect(data.url);
+    const url = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
+    console.log('[EcoFin] Redirecting to Facebook OAuth:', url);
+    return res.redirect(url);
 });
 
+// Handle the callback from Facebook (via Supabase)
 app.get('/auth/callback', async (req, res) => {
-    console.log('🔥 CALLBACK HIT');
-    console.log('FULL URL:', req.url);
-    console.log('Query params:', req.query);
-
     const code = req.query.code;
+    console.log('🔥 CALLBACK HIT');
+    console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
+    console.log('[EcoFin] Full URL:', req.url);
 
     if (!code) {
-        console.warn('[EcoFin] ⚠️ No authorization code received');
+        console.warn('[EcoFin] ⚠️ No code received');
         return res.redirect('/login.html?error=no_code');
     }
 
@@ -108,31 +105,26 @@ app.get('/auth/callback', async (req, res) => {
 
         if (error) {
             console.error('[EcoFin] ❌ Code exchange failed:', error.message);
-            return res.redirect('/login.html?error=auth_failed');
-        }
-
-        if (!data.user) {
-            console.error('[EcoFin] ❌ No user data after code exchange');
-            return res.redirect('/login.html?error=no_user');
+            return res.redirect('/login.html?error=exchange_failed');
         }
 
         const user = data.user;
-        console.log('✅ USER DATA:', user);
+        console.log('[EcoFin] ✅ User authenticated:', user.id);
 
-        // Extract Facebook ID from Supabase identities
+        // Extract Facebook ID from identities
         const facebookId = user.identities?.[0]?.identity_data?.sub || 
                           user.identities?.[0]?.identity_data?.id || 
                           null;
         const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0];
         const email = user.email || '';
 
-        console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookId})`);
+        console.log(`[EcoFin] ✅ Facebook user: ${name} (${facebookId})`);
 
+        // Save to custom users table
         const userId = `fb_${facebookId || user.id}`;
-
-        // Save user to database
+        
         try {
-            console.log(`[EcoFin] 🔄 Attempting to save user profile: ${userId}`);
+            console.log(`[EcoFin] 🔄 Saving user to database: ${userId}`);
             await saveUser(userId, {
                 name,
                 email,
@@ -148,11 +140,11 @@ app.get('/auth/callback', async (req, res) => {
             });
             console.log(`[EcoFin] ✅ User saved to database: ${userId}`);
         } catch (dbErr) {
-            console.error('[EcoFin] ❌ Database save error:', dbErr.message);
-            // Continue with login even if DB save fails
+            console.error('[EcoFin] ⚠️ Database save failed:', dbErr.message);
+            // Continue - user is authenticated even if DB save failed
         }
 
-        // Establish session
+        // Create server-side session
         req.session.userId = userId;
         req.session.userName = name;
         req.session.loggedIn = true;
@@ -162,15 +154,17 @@ app.get('/auth/callback', async (req, res) => {
                 console.error('[EcoFin] ❌ Session save error:', err);
                 return res.redirect('/login.html?error=session_failed');
             }
-            console.log(`[EcoFin] ✅ Session established for ${userId}`);
+            console.log(`[EcoFin] ✅ Session established: ${userId}`);
             res.redirect('/dashboard.html');
         });
 
     } catch (err) {
-        console.error('[EcoFin] ❌ Callback error:', err.message, err);
-        res.redirect('/login.html?error=callback_failed');
+        console.error('[EcoFin] ❌ Callback error:', err.message);
+        res.redirect('/login.html?error=callback_error');
     }
 });
+
+
 
 
 // ─────────────────────────────────────────────────────────────
