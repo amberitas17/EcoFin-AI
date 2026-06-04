@@ -76,7 +76,9 @@ app.get('/auth/facebook', async (req, res) => {
     const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
         options: {
-            redirectTo: process.env.REDIRECT_URI // e.g. https://yourapp.com/auth/callback
+            redirectTo: process.env.REDIRECT_URI,// e.g. https://yourapp.com/auth/callback
+            
+            flowType: 'implicit'
         }
     });
 
@@ -90,66 +92,48 @@ app.get('/auth/facebook', async (req, res) => {
 
 app.get('/auth/callback', async (req, res) => {
     console.log('🔥 CALLBACK HIT');
-    console.log('QUERY:', req.query);
+    console.log('FULL URL:', req.url);
 
-    const code = req.query.code;
-    if (!code) return res.redirect('/login.html?error=missing_code');
+    const { access_token, refresh_token } = req.query;
 
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-
-    if (error) {
-        console.error('Auth error:', error.message);
-        return res.redirect('/login.html?error=auth_failed');
+    // If tokens not in query → check URL hash workaround
+    if (!access_token) {
+        console.log('❌ No access_token found');
+        return res.redirect('/login.html?error=no_token');
     }
 
-    const user = data.user;
+    // Get user directly
+    const { data: { user }, error } = await supabase.auth.getUser(access_token);
 
+    if (error || !user) {
+        console.error('❌ Failed to get user:', error);
+        return res.redirect('/login.html?error=user_fetch_failed');
+    }
+
+    console.log('✅ USER:', user);
 
     const facebookId =
         user.identities?.[0]?.identity_data?.id || null;
 
+    const userId = `fb_${facebookId || user.id}`;
 
-    const userId = user.id; // Use Supabase user ID directly for consistency
+    // Save user
+    const { error: dbError } = await supabase.from('users').upsert({
+        id: userId,
+        auth_id: user.id,
+        name: user.user_metadata?.full_name || user.user_metadata?.name,
+        email: user.email,
+        facebook_id: facebookId,
+        location: 'Philippines'
+    });
 
-    console.log('USER FROM SUPABASE:', JSON.stringify(user, null, 2));
+    if (dbError) console.error('❌ DB ERROR:', dbError);
 
-    try {
-        const { data: dbData, error: dbError } = await supabase
-            .from('users')
-            .upsert({
-                id: userId,
-                auth_id: user.id,
-                name: user.user_metadata?.full_name || user.user_metadata?.name,
-                email: user.email,
-                facebook_id: facebookId,
-                psid: null,
-                whatsapp: null,
-                waba_id: null,
-                total_catches: 0,
-                fishing_hours: 0,
-                achievements: 0,
-                success_rate: 0,
-                location: 'Philippines'
-            }, {
-                onConflict: 'id'
-            })
-            .select();
-
-        if (dbError) {
-            console.error('❌ INSERT FAILED:', dbError);
-        } else {
-            console.log('✅ INSERT SUCCESS:', dbData);
-        }
-
-    } catch (err) {
-        console.error('❌ CRITICAL ERROR:', err);
-    }
-
-
+    // SESSION
     req.session.userId = userId;
     req.session.loggedIn = true;
 
-    await new Promise(resolve => req.session.save(resolve));
+    await new Promise(r => req.session.save(r));
 
     res.redirect('/dashboard.html');
 });
