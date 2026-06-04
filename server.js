@@ -134,9 +134,6 @@ app.get('/auth/facebook/callback', async (req, res) => {
     });
 
     try {
-        // This will be the actual processing block below
-
-    try {
         // 1. Exchange code for token
         const tokenRes = await axios.get(
             'https://graph.facebook.com/v19.0/oauth/access_token',
