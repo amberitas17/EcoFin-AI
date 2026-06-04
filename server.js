@@ -87,16 +87,18 @@ app.get('/auth/facebook', (req, res) => {
     return res.redirect(url);
 });
 
-// Time-based cache for OAuth codes (expires after 5 minutes)
-const processedCodes = new Map();
+// Promise-based lock for OAuth codes - ensures only one request processes each code
+const codeProcessingLocks = new Map();
+
+// Clean up old locks after 5 minutes
 setInterval(() => {
     const now = Date.now();
-    for (const [code, timestamp] of processedCodes.entries()) {
-        if (now - timestamp > 5 * 60 * 1000) { // 5 minutes
-            processedCodes.delete(code);
+    for (const [code, { timestamp }] of codeProcessingLocks.entries()) {
+        if (now - timestamp > 5 * 60 * 1000) {
+            codeProcessingLocks.delete(code);
         }
     }
-}, 60 * 1000); // Clean up every minute
+}, 60 * 1000);
 
 app.get('/auth/facebook/callback', async (req, res) => {
     const code = req.query.code;
@@ -107,19 +109,32 @@ app.get('/auth/facebook/callback', async (req, res) => {
         return res.redirect('/login.html?error=cancelled');
     }
 
-    // Check if code was recently processed (within last 30 seconds)
-    if (processedCodes.has(code)) {
-        const timeSinceProcessing = Date.now() - processedCodes.get(code);
-        if (timeSinceProcessing < 30 * 1000) { // 30 seconds
-            console.log('Duplicate OAuth callback blocked (processed recently)');
-            if (req.session?.loggedIn) {
-                return res.redirect('/dashboard.html');
-            }
-            return res.redirect('/login.html');
+    // If this code is already being processed, wait for it to complete
+    if (codeProcessingLocks.has(code)) {
+        console.log('Waiting for existing code processing to complete...');
+        try {
+            const result = await codeProcessingLocks.get(code).promise;
+            console.log('Duplicate request using previous result:', result.redirectUrl);
+            return res.redirect(result.redirectUrl);
+        } catch (err) {
+            console.error('Previous code processing failed, redirecting to login');
+            return res.redirect('/login.html?error=failed');
         }
     }
 
-    processedCodes.set(code, Date.now());
+    // Create a promise and lock for this code
+    let resolveCodeLock;
+    const codePromise = new Promise((resolve) => {
+        resolveCodeLock = resolve;
+    });
+
+    codeProcessingLocks.set(code, {
+        promise: codePromise,
+        timestamp: Date.now()
+    });
+
+    try {
+        // This will be the actual processing block below
 
     try {
         // 1. Exchange code for token
@@ -193,12 +208,24 @@ app.get('/auth/facebook/callback', async (req, res) => {
 
         console.log('SESSION SAVED:', req.session);
 
+        // Resolve the lock with the success redirect
+        resolveCodeLock({ success: true, redirectUrl: '/dashboard.html' });
+
         // 5. FINAL REDIRECT
         return res.redirect('/dashboard.html');
 
     } catch (err) {
         console.error('FACEBOOK AUTH ERROR:', err.response?.data || err.message);
+        
+        // Resolve the lock with the failure redirect
+        resolveCodeLock({ success: false, redirectUrl: '/login.html?error=failed' });
+        
         return res.redirect('/login.html?error=failed');
+    } finally {
+        // Clean up the lock after a brief delay to allow duplicates to complete
+        setTimeout(() => {
+            codeProcessingLocks.delete(code);
+        }, 2000);
     }
 });
 
