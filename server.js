@@ -110,68 +110,72 @@ app.get('/auth/callback', async (req, res) => {
                 access_token: accessToken,
             }
         });
-        const fbUser = userRes.data;
+        const { id: facebookUserId, name, email } = userRes.data;
 
-        console.log(`[EcoFin] ✅ Facebook OAuth successful for ${fbUser.name} (${fbUser.id})`);
+
+        console.log(`[EcoFin] ✅ Facebook OAuth successful for ${name} (${facebookUserId})`);
         
         // 2. Fix variable scope and pass correct FB ID variable
-        let user;
-        const existingUser = await getUserByFacebookId(fbUser.id); 
+        let userId;
+        const existingUser = await getUserByFacebookId(facebookUserId); 
         
-        if (!existingUser) {
-            const userId = `fb_${fbUser.id}`;
-            try {
-                console.log(`[EcoFin] 🔄 Attempting to create user profile for Facebook user: ${userId}`);
-                await saveUser(userId, {
-                    name: fbUser.name,
-                    email: fbUser.email || '',
-                    facebook_id: fbUser.id,
-                    location: 'Philippines',
-                    total_catches: 0,
-                    fishing_hours: 0,
-                    achievements: 0,
-                    success_rate: 0,
-                    member_since: new Date().toLocaleDateString('en-US', {
-                        month: 'long', year: 'numeric'
-                    }),
-                    messenger_connected: true,
-                    whatsapp_connected: false,
-                });
-                console.log(`[EcoFin] ✅ Created user profile for Facebook user: ${userId}`);
-            }
-            catch (dbErr) {
-                console.error('[EcoFin] ❌ Failed to create user profile for Facebook user:', dbErr.message, dbErr);
-                return res.redirect('/login.html?error=profile_creation_failed');
-            }
-            user = await getUserByFacebookId(fbUser.id);
-        } else if (existingUser && !existingUser.facebook_id) {
-            await updateUser(existingUser.id, { facebook_id: fbUser.id });
-            console.log(`[EcoFin] 🔄 Linked Facebook ID to existing user: ${existingUser.id}`);
-            user = await getUserByFacebookId(fbUser.id);
+      if (req.session.loggedIn && req.session.userId) {
+            userId = req.session.userId;
+            await updateUser(userId, {
+                facebook_id:         facebookUserId,
+                psid:                psid || '',
+                messenger_connected: !!psid,
+            });
+            console.log(`[EcoFin] ✅ Messenger linked to existing user: ${userId}`);
+        } else if (existingUser) {
+            userId = existingUser.id;
+            await updateUser(userId, {
+                name,
+                facebook_id:         facebookUserId,
+                psid:                psid || existingUser.psid || '',
+                messenger_connected: !!psid,
+            });
+            console.log(`[EcoFin] ✅ Existing Facebook user updated: ${userId}`);
         } else {
-            user = existingUser;
-        }
-    
-        // 3. Establish session safely
-        if (!user) {
-            throw new Error("User profile resolution failed.");
+            userId = `fb_${facebookUserId}`;
+            await saveUser(userId, {
+                name,
+                email:               '',
+                facebook_id:         facebookUserId,
+                psid:                psid || '',
+                whatsapp:            '',
+                location:            'Philippines',
+                total_catches:       0,
+                fishing_hours:       0,
+                achievements:        0,
+                success_rate:        0,
+                member_since:        new Date().toLocaleDateString('en-US', {
+                    month: 'long', year: 'numeric'
+                }),
+                messenger_connected: !!psid,
+                whatsapp_connected:  false,
+            });
+            console.log(`[EcoFin] ✅ New Facebook user created: ${userId}`);
         }
 
-        req.session.userId = user.id;
-        req.session.userName = user.name;
-        req.session.userEmail = user.email || '';
+        req.session.userId   = userId;
+        req.session.userName = name;
         req.session.loggedIn = true;
 
-        // Save session explicitly before redirecting to prevent race conditions
-        res.session.save((err) => {
-            if (err) {
-                console.error('[EcoFin] ❌ Session save error after Facebook login:', err);
-                return res.redirect('/login.html?error=session_failed');
-            }
-            console.log(`[EcoFin] ✅ Session established for Facebook user: ${user.id}`);
-            res.redirect('/dashboard.html');
+        // ── Send login notification to Messenger and/or WhatsApp ──
+        const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
+        if (psid) {
+            await sendMessengerMessage(psid, fbLoginMsg);
+            await sendWelcomeButtons(psid);
         }
-        );
+
+        const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
+        if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
+            await sendWhatsAppMessage(fbUserData.whatsapp, fbLoginMsg);
+            await sendWhatsAppMenu(fbUserData.whatsapp);
+        }
+
+        res.redirect('/dashboard.html');
 
     }
     catch (err) {
