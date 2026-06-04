@@ -83,26 +83,26 @@ app.get('/auth/facebook', (req, res) => {
 });
 
 app.get('/auth/callback', async (req, res) => {
-    const { code } = req.query;
-    if (!code) {
-        console.error('[EcoFin] ❌ No code received in Facebook callback');
-        return res.redirect('/login.html?error=oauth_failed');
-    }
+    const { code } = req.query.code || req.query.code;
+    // if (!code) {
+    //     console.error('[EcoFin] ❌ No code received in Facebook callback');
+    //     return res.redirect('/login.html?error=oauth_failed');
+    // }
 
-        console.log('===== SESSION BEFORE SAVE =====');
-    console.log(req.session);
+    console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
+    console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
 
-    req.session.save((err) => {
-        if (err) {
-            console.error('Session save failed:', err);
-            return res.redirect('/login.html?error=session_failed');
-        }
+    // req.session.save((err) => {
+    //     if (err) {
+    //         console.error('Session save failed:', err);
+    //         return res.redirect('/login.html?error=session_failed');
+    //     }
 
-        console.log('===== SESSION SAVED =====');
-        console.log(req.session);
+    //     console.log('===== SESSION SAVED =====');
+    //     console.log(req.session);
 
-        res.redirect('/dashboard.html');
-    });
+    //     res.redirect('/dashboard.html');
+    // });
     
 
     try {
@@ -127,8 +127,9 @@ app.get('/auth/callback', async (req, res) => {
         console.log(`[EcoFin] ✅ Facebook OAuth successful for ${fbUser.name} (${fbUser.id})`);
         
         // Check if user already exists in our database
-        let user = await getUserByFacebookId(fbUser.id);
-        if (!user) {
+        const existingUser = await getUserByFacebookId(facebookUserId);
+        let userId;
+        if (!existingUser) {
             // Create new user profile
             const userId = `fb_${fbUser.id}`;
             try {
@@ -155,6 +156,14 @@ app.get('/auth/callback', async (req, res) => {
                 return res.redirect('/login.html?error=profile_creation_failed');
             }
             user = await getUserByFacebookId(fbUser.id);
+        } else if (existingUser && !existingUser.facebook_id) {
+            // Update existing user profile to link Facebook ID
+            await updateUser(existingUser.id, { facebook_id: fbUser.id });
+            console.log(`[EcoFin] 🔄 Linked Facebook ID to existing user: ${existingUser.id}`)
+            user = await getUserByFacebookId(fbUser.id);
+        } else {
+            userId = existingUser.id;
+            user = existingUser;
         }
     
         req.session.userId = user.id;
@@ -162,19 +171,20 @@ app.get('/auth/callback', async (req, res) => {
         req.session.userEmail = user.email;
         req.session.loggedIn = true;
 
-        req.session.save((err) => {
-            if (err) {  
-                console.error('[EcoFin] ❌ Session save error after Facebook login:', err);
-                return res.redirect('/login.html?error=session_failed');
-            }
-            console.log(`[EcoFin] ✅ Session established for Facebook user: ${user.id}`);
-            res.redirect('/dashboard.html');
-        }
-        );
+        // req.session.save((err) => {
+        //     if (err) {  
+        //         console.error('[EcoFin] ❌ Session save error after Facebook login:', err);
+        //         return res.redirect('/login.html?error=session_failed');
+        //     }
+        //     console.log(`[EcoFin] ✅ Session established for Facebook user: ${user.id}`);
+        //     res.redirect('/dashboard.html');
+        // }
+        // );
+        res.redirect('/dashboard.html');
 
     }
     catch (err) {
-        console.error('[EcoFin] ❌ Facebook OAuth error:', err.message);
+        console.log('[EcoFin] ❌ Facebook OAuth error:', err.message);
         res.redirect('/login.html?error=oauth_failed');
     }
 });
