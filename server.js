@@ -99,49 +99,65 @@ app.get('/auth/callback', async (req, res) => {
     }
 
     try {
-        // Exchange code for session with Supabase
-        console.log('[EcoFin] 🔄 Exchanging code for session...');
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        // Step 1: Exchange code with Facebook for access token (NOT with Supabase)
+        console.log('[EcoFin] 🔄 Exchanging code with Facebook for access token...');
+        const tokenRes = await axios.get('https://graph.facebook.com/v19.0/oauth/access_token', {
+            params: {
+                client_id: process.env.APP_ID,
+                client_secret: process.env.APP_SECRET,
+                redirect_uri: process.env.REDIRECT_URI,
+                code,
+            }
+        });
+        
+        const accessToken = tokenRes.data.access_token;
+        console.log('[EcoFin] ✅ Access token received');
 
-        if (error) {
-            console.error('[EcoFin] ❌ Code exchange failed:', error.message);
-            return res.redirect('/login.html?error=exchange_failed');
-        }
+        // Step 2: Get user profile from Facebook
+        console.log('[EcoFin] 🔄 Fetching user profile from Facebook...');
+        const profileRes = await axios.get('https://graph.facebook.com/me', {
+            params: {
+                access_token: accessToken,
+                fields: 'id,name,email'
+            }
+        });
 
-        const user = data.user;
-        console.log('[EcoFin] ✅ User authenticated:', user.id);
-
-        // Extract Facebook ID from identities
-        const facebookId = user.identities?.[0]?.identity_data?.sub || 
-                          user.identities?.[0]?.identity_data?.id || 
-                          null;
-        const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0];
-        const email = user.email || '';
-
+        const { id: facebookId, name, email } = profileRes.data;
         console.log(`[EcoFin] ✅ Facebook user: ${name} (${facebookId})`);
 
-        // Save to custom users table
-        const userId = `fb_${facebookId || user.id}`;
-        
-        try {
-            console.log(`[EcoFin] 🔄 Saving user to database: ${userId}`);
-            await saveUser(userId, {
+        // Step 3: Check if user exists by Facebook ID
+        const existingUser = await getUserByFacebookId(facebookId);
+        let userId;
+
+        if (existingUser) {
+            // User exists, just update
+            userId = existingUser.id;
+            await updateUser(userId, {
                 name,
-                email,
-                facebook_id: facebookId,
-                location: 'Philippines',
-                total_catches: 0,
-                fishing_hours: 0,
-                achievements: 0,
-                success_rate: 0,
-                member_since: new Date().toLocaleDateString('en-US', {
-                    month: 'long', year: 'numeric'
-                }),
+                email: email || existingUser.email,
             });
-            console.log(`[EcoFin] ✅ User saved to database: ${userId}`);
-        } catch (dbErr) {
-            console.error('[EcoFin] ⚠️ Database save failed:', dbErr.message);
-            // Continue - user is authenticated even if DB save failed
+            console.log(`[EcoFin] ✅ Existing user updated: ${userId}`);
+        } else {
+            // New user - save to database
+            userId = `fb_${facebookId}`;
+            try {
+                await saveUser(userId, {
+                    name,
+                    email: email || '',
+                    facebook_id: facebookId,
+                    location: 'Philippines',
+                    total_catches: 0,
+                    fishing_hours: 0,
+                    achievements: 0,
+                    success_rate: 0,
+                    member_since: new Date().toLocaleDateString('en-US', {
+                        month: 'long', year: 'numeric'
+                    }),
+                });
+                console.log(`[EcoFin] ✅ New user saved: ${userId}`);
+            } catch (dbErr) {
+                console.error('[EcoFin] ⚠️ Database save failed:', dbErr.message);
+            }
         }
 
         // Create server-side session
