@@ -7,8 +7,6 @@ const session = require('express-session');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 
-
-
 const webhookRoute = require('./src/routes/webhook');
 const {
     saveUser,
@@ -74,172 +72,60 @@ app.get('/dashboard.html', (req, res) => {
 });
 
 
-app.get('/auth/facebook', (req, res) => {
-    const params = new URLSearchParams({
-        client_id: process.env.APP_ID,
-        redirect_uri: process.env.REDIRECT_URI,
-        scope: 'public_profile,email',
-        response_type: 'code',
-        auth_type: 'rerequest'
+app.get('/auth/facebook', async (req, res) => {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'facebook',
+        options: {
+            redirectTo: process.env.REDIRECT_URI // e.g. https://yourapp.com/auth/callback
+        }
     });
 
-    const url = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
-    return res.redirect(url);
+    if (error) {
+        console.error('OAuth error:', error.message);
+        return res.redirect('/login.html?error=oauth');
+    }
+
+    return res.redirect(data.url);
 });
 
-// Track processing locks and processed codes
-const codeProcessingLocks = new Map();
-const processedCodes = new Set(); // Permanently track processed codes
-
-// Clean up old locks after 5 minutes
-setInterval(() => {
-    const now = Date.now();
-    for (const [code, { timestamp }] of codeProcessingLocks.entries()) {
-        if (now - timestamp > 5 * 60 * 1000) {
-            codeProcessingLocks.delete(code);
-        }
-    }
-}, 60 * 1000);
-
-app.get('/auth/facebook/callback', async (req, res) => {
+app.get('/auth/callback', async (req, res) => {
     const code = req.query.code;
 
-    console.log('FACEBOOK CALLBACK:', code);
+    if (!code) return res.redirect('/login.html?error=missing_code');
 
-    if (!code) {
-        return res.redirect('/login.html?error=cancelled');
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (error) {
+        console.error('Supabase auth error:', error.message);
+        return res.redirect('/login.html?error=auth_failed');
     }
 
-    // If this code has already been processed, use the cached result
-    if (processedCodes.has(code)) {
-        console.log('Code already processed, using cached result');
-        // Retrieve the cached session data from session store or redirect to dashboard
-        return res.redirect('/dashboard.html');
-    }
+    const user = data.user;
 
-    // If this code is currently being processed, wait for it to complete
-    if (codeProcessingLocks.has(code)) {
-        console.log('Waiting for existing code processing to complete...');
-        try {
-            const result = await codeProcessingLocks.get(code).promise;
-            console.log('Duplicate request using previous result:', result.redirectUrl);
-            return res.redirect(result.redirectUrl);
-        } catch (err) {
-            console.error('Previous code processing failed, redirecting to login');
-            return res.redirect('/login.html?error=failed');
-        }
-    }
+    // Create or update your own users table
+    const facebookId = user.user_metadata?.provider_id;
 
-    // Create a promise and lock for this code
-    let resolveCodeLock;
-    const codePromise = new Promise((resolve) => {
-        resolveCodeLock = resolve;
+    let userId = `fb_${facebookId || user.id}`;
+
+    await saveUser(userId, {
+        name: user.user_metadata?.full_name || user.user_metadata?.name,
+        email: user.email,
+        facebook_id: facebookId,
+        location: 'Philippines',
+        messenger_connected: false,
+        whatsapp_connected: false,
+        total_catches: 0
     });
 
-    codeProcessingLocks.set(code, {
-        promise: codePromise,
-        timestamp: Date.now()
-    });
+    // SESSION (keep your existing system)
+    req.session.userId = userId;
+    req.session.userName = user.user_metadata?.name;
+    req.session.loggedIn = true;
 
-    try {
-        // 1. Exchange code for token
-        const tokenRes = await axios.get(
-            'https://graph.facebook.com/v19.0/oauth/access_token',
-            {
-                params: {
-                    client_id: process.env.APP_ID,
-                    client_secret: process.env.APP_SECRET,
-                    redirect_uri: process.env.REDIRECT_URI,
-                    code
-                }
-            }
-        );
+    await new Promise(resolve => req.session.save(resolve));
 
-        const accessToken = tokenRes.data.access_token;
-
-        // 2. Get profile
-        const profileRes = await axios.get(
-            'https://graph.facebook.com/me',
-            {
-                params: {
-                    access_token: accessToken,
-                    fields: 'id,name,email'
-                }
-            }
-        );
-
-        const facebookUserId = profileRes.data.id;
-        const name = profileRes.data.name;
-        const email = profileRes.data.email;
-
-        console.log('Facebook user:', name);
-
-        // 3. Find or create user
-        let user = await getUserByFacebookId(facebookUserId);
-        let userId;
-
-        if (user) {
-            userId = user.id;
-            await updateUser(userId, {
-                name,
-                facebook_id: facebookUserId,
-                email
-            });
-        } else {
-            userId = `fb_${facebookUserId}`;
-
-            await saveUser(userId, {
-                name,
-                email,
-                facebook_id: facebookUserId,
-                location: 'Philippines',
-                messenger_connected: false,
-                whatsapp_connected: false,
-                total_catches: 0
-            });
-        }
-
-        // 4. SESSION (CRITICAL PART)
-        req.session.userId = userId;
-        req.session.userName = name;
-        req.session.loggedIn = true;
-
-        await new Promise((resolve, reject) => {
-            req.session.save(err => {
-                if (err) return reject(err);
-                resolve();
-            });
-        });
-
-        console.log('SESSION SAVED:', req.session);
-
-        // Mark this code as permanently processed
-        processedCodes.add(code);
-
-        // Resolve the lock with the success redirect
-        resolveCodeLock({ success: true, redirectUrl: '/dashboard.html' });
-
-        // 5. FINAL REDIRECT
-        return res.redirect('/dashboard.html');
-
-    } catch (err) {
-        console.error('FACEBOOK AUTH ERROR:', err.response?.data || err.message);
-        
-        // Mark this code as permanently processed (to prevent retry)
-        processedCodes.add(code);
-        
-        // Resolve the lock with the failure redirect
-        resolveCodeLock({ success: false, redirectUrl: '/login.html?error=failed' });
-        
-        return res.redirect('/login.html?error=failed');
-    } finally {
-        // Clean up the lock after a brief delay to allow duplicates to complete
-        setTimeout(() => {
-            codeProcessingLocks.delete(code);
-        }, 2000);
-    }
+    return res.redirect('/dashboard.html');
 });
-
 
 
 // ─────────────────────────────────────────────────────────────
