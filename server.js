@@ -90,53 +90,53 @@ app.get('/auth/facebook', async (req, res) => {
 
 app.get('/auth/callback', async (req, res) => {
     const code = req.query.code;
-
     if (!code) return res.redirect('/login.html?error=missing_code');
 
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (error) {
-        console.error('Supabase auth error:', error.message);
+        console.error('Auth error:', error.message);
         return res.redirect('/login.html?error=auth_failed');
     }
 
     const user = data.user;
 
-    // Create or update your own users table
-    const facebookId = user.user_metadata?.provider_id;
+    const facebookId =
+        user.identities?.[0]?.identity_data?.id || null;
 
-    let userId = `fb_${facebookId || user.id}`;
+    const userId = `fb_${facebookId || user.id}`;
 
-    await saveUser(userId, {
-        name: user.user_metadata?.full_name || user.user_metadata?.name,
-        email: user.email,
-        facebook_id: facebookId,
-        psid: facebookId ? `psid_${facebookId}` : null,
-        whatsapp: null,
-        waba_id: null,
-        total_catches: 0,
-        fishing_hours: 0,
-        achievements: 0,
-        success_rate: 0,
-        member_since: new Date().toLocaleDateString('en-US', {
-            month: 'long', year: 'numeric'
-        }),
-        messenger_connected: false,
-        whatsapp_connected: false,
-        location: 'Philippines',
-        messenger_connected: false,
-        whatsapp_connected: false,
-        total_catches: 0
-    });
+    console.log('OAuth USER:', user);
 
-    // SESSION (keep your existing system)
+    const { error: dbError } = await supabase
+        .from('users')
+        .upsert({
+            id: userId,
+            name: user.user_metadata?.full_name || user.user_metadata?.name,
+            email: user.email,
+            facebook_id: facebookId,
+            psid: null,
+            whatsapp: null,
+            waba_id: null,
+            fishing_hours: 0,
+            achievements: 0,
+            success_rate: 0,
+            location: 'Philippines',
+            total_catches: 0
+        });
+
+    if (dbError) {
+        console.error('DATABASE ERROR:', dbError);
+    } else {
+        console.log('✅ User saved to DB');
+    }
+
     req.session.userId = userId;
-    req.session.userName = user.user_metadata?.name;
     req.session.loggedIn = true;
 
     await new Promise(resolve => req.session.save(resolve));
 
-    return res.redirect('/dashboard.html');
+    res.redirect('/dashboard.html');
 });
 
 
