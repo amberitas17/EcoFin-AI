@@ -89,6 +89,9 @@ app.get('/auth/facebook', async (req, res) => {
 });
 
 app.get('/auth/callback', async (req, res) => {
+    console.log('🔥 CALLBACK HIT');
+    console.log('QUERY:', req.query);
+
     const code = req.query.code;
     if (!code) return res.redirect('/login.html?error=missing_code');
 
@@ -101,40 +104,47 @@ app.get('/auth/callback', async (req, res) => {
 
     const user = data.user;
 
+
     const facebookId =
         user.identities?.[0]?.identity_data?.id || null;
 
+
     const userId = user.id; // Use Supabase user ID directly for consistency
 
-    console.log('OAuth USER:', user);
+    console.log('USER FROM SUPABASE:', JSON.stringify(user, null, 2));
 
     try {
-        console.log(`[EcoFin] 🔄 Attempting to save user profile during OAuth callback: ${userId}`);
-        const { data: upsertData, error: dbError } = await supabase
+        const { data: dbData, error: dbError } = await supabase
             .from('users')
             .upsert({
                 id: userId,
+                auth_id: user.id,
                 name: user.user_metadata?.full_name || user.user_metadata?.name,
                 email: user.email,
                 facebook_id: facebookId,
                 psid: null,
                 whatsapp: null,
                 waba_id: null,
+                total_catches: 0,
                 fishing_hours: 0,
                 achievements: 0,
                 success_rate: 0,
-                location: 'Philippines',
-                total_catches: 0
-            });
+                location: 'Philippines'
+            }, {
+                onConflict: 'id'
+            })
+            .select();
 
         if (dbError) {
-            console.error('[EcoFin] ❌ DATABASE ERROR during OAuth:', dbError.message, dbError);
+            console.error('❌ INSERT FAILED:', dbError);
         } else {
-            console.log('✅ User saved to DB:', userId);
+            console.log('✅ INSERT SUCCESS:', dbData);
         }
+
     } catch (err) {
-        console.error('Database error during OAuth callback:', err.message);
+        console.error('❌ CRITICAL ERROR:', err);
     }
+
 
     req.session.userId = userId;
     req.session.loggedIn = true;
