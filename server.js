@@ -91,57 +91,84 @@ app.get('/auth/facebook', async (req, res) => {
 app.get('/auth/callback', async (req, res) => {
     console.log('🔥 CALLBACK HIT');
     console.log('FULL URL:', req.url);
+    console.log('Query params:', req.query);
 
-    const { access_token, refresh_token } = req.query;
+    const code = req.query.code;
 
-    // If tokens not in query → check URL hash workaround
-    if (!access_token) {
-        console.log('❌ No access_token found');
-        return res.redirect('/login.html?error=no_token');
+    if (!code) {
+        console.warn('[EcoFin] ⚠️ No authorization code received');
+        return res.redirect('/login.html?error=no_code');
     }
 
-    // Get user directly
-    const { data: { user }, error } = await supabase.auth.getUser(access_token);
-
-    if (error || !user) {
-        console.error('❌ Failed to get user:', error);
-        return res.redirect('/login.html?error=user_fetch_failed');
-    }
-
-    console.log('✅ USER:', user);
-
-    const facebookId =
-        user.identities?.[0]?.identity_data?.id || null;
-
-    const userId = `fb_${facebookId || user.id}`;
-
-    // Save user profile in DB (if not exists) - use Supabase user ID as primary key
     try {
-        console.log(`[EcoFin] 🔄 Attempting to save user profile from Facebook login: ${userId}`);
-        await saveUser(userId, {
-            name: user.user_metadata?.name || `FB User ${facebookId}`,
-            email: user.email || '',
-            facebook_id: facebookId,
-            location: 'Philippines',
-            total_catches: 0,
-            fishing_hours: 0,
-            achievements: 0,
-            success_rate: 0,
-            member_since: new Date().toLocaleDateString('en-US', {
-                month: 'long', year: 'numeric'
-            }),
+        // Exchange code for session with Supabase
+        console.log('[EcoFin] 🔄 Exchanging code for session...');
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
+        if (error) {
+            console.error('[EcoFin] ❌ Code exchange failed:', error.message);
+            return res.redirect('/login.html?error=auth_failed');
+        }
+
+        if (!data.user) {
+            console.error('[EcoFin] ❌ No user data after code exchange');
+            return res.redirect('/login.html?error=no_user');
+        }
+
+        const user = data.user;
+        console.log('✅ USER DATA:', user);
+
+        // Extract Facebook ID from Supabase identities
+        const facebookId = user.identities?.[0]?.identity_data?.sub || 
+                          user.identities?.[0]?.identity_data?.id || 
+                          null;
+        const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0];
+        const email = user.email || '';
+
+        console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookId})`);
+
+        const userId = `fb_${facebookId || user.id}`;
+
+        // Save user to database
+        try {
+            console.log(`[EcoFin] 🔄 Attempting to save user profile: ${userId}`);
+            await saveUser(userId, {
+                name,
+                email,
+                facebook_id: facebookId,
+                location: 'Philippines',
+                total_catches: 0,
+                fishing_hours: 0,
+                achievements: 0,
+                success_rate: 0,
+                member_since: new Date().toLocaleDateString('en-US', {
+                    month: 'long', year: 'numeric'
+                }),
+            });
+            console.log(`[EcoFin] ✅ User saved to database: ${userId}`);
+        } catch (dbErr) {
+            console.error('[EcoFin] ❌ Database save error:', dbErr.message);
+            // Continue with login even if DB save fails
+        }
+
+        // Establish session
+        req.session.userId = userId;
+        req.session.userName = name;
+        req.session.loggedIn = true;
+
+        req.session.save((err) => {
+            if (err) {
+                console.error('[EcoFin] ❌ Session save error:', err);
+                return res.redirect('/login.html?error=session_failed');
+            }
+            console.log(`[EcoFin] ✅ Session established for ${userId}`);
+            res.redirect('/dashboard.html');
         });
-    } catch (dbError) {
-        console.error('❌ DB ERROR:', dbError);
+
+    } catch (err) {
+        console.error('[EcoFin] ❌ Callback error:', err.message, err);
+        res.redirect('/login.html?error=callback_failed');
     }
-
-    // SESSION
-    req.session.userId = userId;
-    req.session.loggedIn = true;
-
-    await new Promise(r => req.session.save(r));
-
-    res.redirect('/dashboard.html');
 });
 
 
