@@ -115,18 +115,6 @@ app.get('/auth/facebook/callback', async (req, res) => {
         try {
             const result = await codeProcessingLocks.get(code).promise;
             console.log('Duplicate request using previous result:', result.redirectUrl);
-            
-            // If the first request was successful, also set the session cookie
-            if (result.sessionID) {
-                res.cookie('connect.sid', result.sessionID, {
-                    path: '/',
-                    httpOnly: true,
-                    secure: true,
-                    sameSite: 'lax',
-                    maxAge: 24 * 60 * 60 * 1000
-                });
-            }
-            
             return res.redirect(result.redirectUrl);
         } catch (err) {
             console.error('Previous code processing failed, redirecting to login');
@@ -217,20 +205,11 @@ app.get('/auth/facebook/callback', async (req, res) => {
 
         console.log('SESSION SAVED:', req.session);
 
-        // Explicitly set the session cookie to ensure it's sent to the browser
-        res.cookie('connect.sid', req.sessionID, {
-            path: '/',
-            httpOnly: true,
-            secure: true,
-            sameSite: 'lax',
-            maxAge: 24 * 60 * 60 * 1000
-        });
-
-        // Resolve the lock with the success redirect (including session ID for duplicates)
-        resolveCodeLock({ success: true, redirectUrl: '/dashboard.html', sessionID: req.sessionID });
+        // Resolve the lock with the success redirect
+        resolveCodeLock({ success: true, redirectUrl: '/dashboard.html' });
 
         // 5. FINAL REDIRECT
-        res.redirect('/dashboard.html');
+        return res.redirect('/dashboard.html');
 
     } catch (err) {
         console.error('FACEBOOK AUTH ERROR:', err.response?.data || err.message);
