@@ -77,8 +77,6 @@ app.get('/auth/facebook', async (req, res) => {
         provider: 'facebook',
         options: {
             redirectTo: process.env.REDIRECT_URI,// e.g. https://yourapp.com/auth/callback
-            
-            flowType: 'implicit'
         }
     });
 
@@ -117,17 +115,25 @@ app.get('/auth/callback', async (req, res) => {
 
     const userId = `fb_${facebookId || user.id}`;
 
-    // Save user
-    const { error: dbError } = await supabase.from('users').upsert({
-        id: userId,
-        auth_id: user.id,
-        name: user.user_metadata?.full_name || user.user_metadata?.name,
-        email: user.email,
-        facebook_id: facebookId,
-        location: 'Philippines'
-    });
-
-    if (dbError) console.error('❌ DB ERROR:', dbError);
+    // Save user profile in DB (if not exists) - use Supabase user ID as primary key
+    try {
+        console.log(`[EcoFin] 🔄 Attempting to save user profile from Facebook login: ${userId}`);
+        await saveUser(userId, {
+            name: user.user_metadata?.name || `FB User ${facebookId}`,
+            email: user.email || '',
+            facebook_id: facebookId,
+            location: 'Philippines',
+            total_catches: 0,
+            fishing_hours: 0,
+            achievements: 0,
+            success_rate: 0,
+            member_since: new Date().toLocaleDateString('en-US', {
+                month: 'long', year: 'numeric'
+            }),
+        });
+    } catch (dbError) {
+        console.error('❌ DB ERROR:', dbError);
+    }
 
     // SESSION
     req.session.userId = userId;
