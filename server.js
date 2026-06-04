@@ -123,8 +123,6 @@ app.get('/auth/callback', async (req, res) => {
             userId = req.session.userId;
             await updateUser(userId, {
                 facebook_id:         facebookUserId,
-                psid:                psid || '',
-                messenger_connected: !!psid,
             });
             console.log(`[EcoFin] ✅ Messenger linked to existing user: ${userId}`);
         } else if (existingUser) {
@@ -132,8 +130,6 @@ app.get('/auth/callback', async (req, res) => {
             await updateUser(userId, {
                 name,
                 facebook_id:         facebookUserId,
-                psid:                psid || existingUser.psid || '',
-                messenger_connected: !!psid,
             });
             console.log(`[EcoFin] ✅ Existing Facebook user updated: ${userId}`);
         } else {
@@ -142,7 +138,6 @@ app.get('/auth/callback', async (req, res) => {
                 name,
                 email:               '',
                 facebook_id:         facebookUserId,
-                psid:                psid || '',
                 whatsapp:            '',
                 location:            'Philippines',
                 total_catches:       0,
