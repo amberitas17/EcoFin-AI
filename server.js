@@ -119,43 +119,55 @@ app.get('/auth/callback', async (req, res) => {
         let userId;
         const existingUser = await getUserByFacebookId(facebookUserId); 
         
-      if (req.session.loggedIn && req.session.userId) {
-            userId = req.session.userId;
-            await updateUser(userId, {
-                facebook_id:         facebookUserId,
-            });
-            console.log(`[EcoFin] ✅ Messenger linked to existing user: ${userId}`);
-        } else if (existingUser) {
-            userId = existingUser.id;
-            await updateUser(userId, {
-                name,
-                facebook_id:         facebookUserId,
-            });
-            console.log(`[EcoFin] ✅ Existing Facebook user updated: ${userId}`);
+        let user = null;
+        const existingUser = await getUserByFacebookId(fbUser.id); 
+        
+        if (!existingUser) {
+            const userId = `fb_${fbUser.id}`;
+            try {
+                console.log(`[EcoFin] 🔄 Attempting to create user profile for Facebook user: ${userId}`);
+                const newProfile = {
+                    name: fbUser.name,
+                    email: fbUser.email || '',
+                    facebook_id: fbUser.id,
+                    location: 'Philippines',
+                    total_catches: 0,
+                    fishing_hours: 0,
+                    achievements: 0,
+                    success_rate: 0,
+                    member_since: new Date().toLocaleDateString('en-US', {
+                        month: 'long', year: 'numeric'
+                    }),
+                    messenger_connected: true,
+                    whatsapp_connected: false,
+                };
+                
+                await saveUser(userId, newProfile);
+                console.log(`[EcoFin] ✅ Created user profile for Facebook user: ${userId}`);
+                
+                // Directly construct the user object to avoid an immediate extra DB lookup
+                user = { id: userId, ...newProfile };
+            }
+            catch (dbErr) {
+                console.error('[EcoFin] ❌ Failed to create user profile for Facebook user:', dbErr.message);
+                return res.redirect('/login.html?error=profile_creation_failed');
+            }
+        } else if (existingUser && !existingUser.facebook_id) {
+            console.log(`[EcoFin] 🔄 Linking Facebook ID to existing user: ${existingUser.id}`);
+            await updateUser(existingUser.id, { facebook_id: fbUser.id });
+            
+            // Update local object reference
+            existingUser.facebook_id = fbUser.id;
+            user = existingUser;
         } else {
-            userId = `fb_${facebookUserId}`;
-            await saveUser(userId, {
-                name,
-                email:               '',
-                facebook_id:         facebookUserId,
-                whatsapp:            '',
-                location:            'Philippines',
-                total_catches:       0,
-                fishing_hours:       0,
-                achievements:        0,
-                success_rate:        0,
-                member_since:        new Date().toLocaleDateString('en-US', {
-                    month: 'long', year: 'numeric'
-                }),
-            });
-            console.log(`[EcoFin] ✅ New Facebook user created: ${userId}`);
+            user = existingUser;
         }
 
-        req.session.userId   = userId;
-        req.session.userName = name;
+        req.session.userId   = user.id;
+        req.session.userName = user.name;
         req.session.loggedIn = true;
 
-        const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
+        const { data: fbUserData } = await supabase.from('users').select('*').eq('id', user.id).single();
         if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
             await sendWhatsAppMessage(fbUserData.whatsapp, fbLoginMsg);
             await sendWhatsAppMenu(fbUserData.whatsapp);
