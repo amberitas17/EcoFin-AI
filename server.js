@@ -174,7 +174,7 @@ app.get('/auth/callback', async (req, res) => {
 
     }
     catch (err) {
-        console.log('[EcoFin] ❌ Facebook OAuth error:', err.message);
+        console.log('[EcoFin] ❌ Facebook OAuth error:', err.response?.data || err.message);
         res.redirect('/login.html?error=oauth_failed');
     }
 });
