@@ -83,27 +83,15 @@ app.get('/auth/facebook', (req, res) => {
 });
 
 app.get('/auth/callback', async (req, res) => {
-    const { code } = req.query.code || req.query.code;
-    // if (!code) {
-    //     console.error('[EcoFin] ❌ No code received in Facebook callback');
-    //     return res.redirect('/login.html?error=oauth_failed');
-    // }
+    // 1. Correctly extract the string code
+    const code = req.query.code;
 
     console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
     console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
 
-    // req.session.save((err) => {
-    //     if (err) {
-    //         console.error('Session save failed:', err);
-    //         return res.redirect('/login.html?error=session_failed');
-    //     }
-
-    //     console.log('===== SESSION SAVED =====');
-    //     console.log(req.session);
-
-    //     res.redirect('/dashboard.html');
-    // });
-    
+    // if (!code) {
+    //     return res.redirect('/login.html?error=no_code');
+    // }
 
     try {
         const tokenRes = await axios.get('https://graph.facebook.com/v19.0/oauth/access_token', {
@@ -126,11 +114,11 @@ app.get('/auth/callback', async (req, res) => {
 
         console.log(`[EcoFin] ✅ Facebook OAuth successful for ${fbUser.name} (${fbUser.id})`);
         
-        // Check if user already exists in our database
-        const existingUser = await getUserByFacebookId(facebookUserId);
-        let userId;
+        // 2. Fix variable scope and pass correct FB ID variable
+        let user;
+        const existingUser = await getUserByFacebookId(fbUser.id); 
+        
         if (!existingUser) {
-            // Create new user profile
             const userId = `fb_${fbUser.id}`;
             try {
                 console.log(`[EcoFin] 🔄 Attempting to create user profile for Facebook user: ${userId}`);
@@ -157,30 +145,25 @@ app.get('/auth/callback', async (req, res) => {
             }
             user = await getUserByFacebookId(fbUser.id);
         } else if (existingUser && !existingUser.facebook_id) {
-            // Update existing user profile to link Facebook ID
             await updateUser(existingUser.id, { facebook_id: fbUser.id });
-            console.log(`[EcoFin] 🔄 Linked Facebook ID to existing user: ${existingUser.id}`)
+            console.log(`[EcoFin] 🔄 Linked Facebook ID to existing user: ${existingUser.id}`);
             user = await getUserByFacebookId(fbUser.id);
         } else {
-            userId = existingUser.id;
             user = existingUser;
         }
     
+        // 3. Establish session safely
+        if (!user) {
+            throw new Error("User profile resolution failed.");
+        }
+
         req.session.userId = user.id;
         req.session.userName = user.name;
-        req.session.userEmail = user.email;
+        req.session.userEmail = user.email || '';
         req.session.loggedIn = true;
 
-        // req.session.save((err) => {
-        //     if (err) {  
-        //         console.error('[EcoFin] ❌ Session save error after Facebook login:', err);
-        //         return res.redirect('/login.html?error=session_failed');
-        //     }
-        //     console.log(`[EcoFin] ✅ Session established for Facebook user: ${user.id}`);
-        //     res.redirect('/dashboard.html');
-        // }
-        // );
-        res.redirect('/dashboard.html');
+        // Save session explicitly before redirecting to prevent race conditions
+         res.redirect('/dashboard.html');
 
     }
     catch (err) {
