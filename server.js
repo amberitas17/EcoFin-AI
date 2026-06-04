@@ -87,8 +87,9 @@ app.get('/auth/facebook', (req, res) => {
     return res.redirect(url);
 });
 
-// Promise-based lock for OAuth codes - ensures only one request processes each code
+// Track processing locks and processed codes
 const codeProcessingLocks = new Map();
+const processedCodes = new Set(); // Permanently track processed codes
 
 // Clean up old locks after 5 minutes
 setInterval(() => {
@@ -109,7 +110,14 @@ app.get('/auth/facebook/callback', async (req, res) => {
         return res.redirect('/login.html?error=cancelled');
     }
 
-    // If this code is already being processed, wait for it to complete
+    // If this code has already been processed, use the cached result
+    if (processedCodes.has(code)) {
+        console.log('Code already processed, using cached result');
+        // Retrieve the cached session data from session store or redirect to dashboard
+        return res.redirect('/dashboard.html');
+    }
+
+    // If this code is currently being processed, wait for it to complete
     if (codeProcessingLocks.has(code)) {
         console.log('Waiting for existing code processing to complete...');
         try {
@@ -205,6 +213,9 @@ app.get('/auth/facebook/callback', async (req, res) => {
 
         console.log('SESSION SAVED:', req.session);
 
+        // Mark this code as permanently processed
+        processedCodes.add(code);
+
         // Resolve the lock with the success redirect
         resolveCodeLock({ success: true, redirectUrl: '/dashboard.html' });
 
@@ -213,6 +224,9 @@ app.get('/auth/facebook/callback', async (req, res) => {
 
     } catch (err) {
         console.error('FACEBOOK AUTH ERROR:', err.response?.data || err.message);
+        
+        // Mark this code as permanently processed (to prevent retry)
+        processedCodes.add(code);
         
         // Resolve the lock with the failure redirect
         resolveCodeLock({ success: false, redirectUrl: '/login.html?error=failed' });
