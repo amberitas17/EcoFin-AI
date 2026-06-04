@@ -76,6 +76,7 @@ app.get('/auth/facebook', async (req, res) => {
     const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
         options: {
+            flowType: 'pkce',
             redirectTo: process.env.REDIRECT_URI,// e.g. https://yourapp.com/auth/callback
         }
     });
