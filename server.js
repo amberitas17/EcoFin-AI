@@ -428,24 +428,41 @@ app.get('/auth/verify-callback', async (req, res) => {
 // E. Get Current Logged-In User
 // ─────────────────────────────────────────────────────────────
 
+// app.get('/api/me', async (req, res) => {
+//     console.log('SESSION:', req.session);
+
+//     if (!req.session?.loggedIn) {
+//         return res.status(401).json({ error: 'Not logged in' });
+//     }
+
+//     const { data, error } = await supabase
+//         .from('users')
+//         .select('*')
+//         .eq('id', req.session.userId)
+//         .single();
+
+//     if (error || !data) {
+//         return res.status(404).json({ error: 'User not found' });
+//     }
+
+//     res.json(data);
+// });
 app.get('/api/me', async (req, res) => {
-    console.log('SESSION:', req.session);
+    if (!req.session.loggedIn) return res.status(401).json({ error: 'Not logged in' });
 
-    if (!req.session?.loggedIn) {
-        return res.status(401).json({ error: 'Not logged in' });
+    try {
+        // Query the Supabase internal auth management system instead of a custom table
+        const { data: { user }, error } = await supabase.auth.admin.getUserById(req.session.userId);
+
+        if (error || !user) {
+            return res.status(404).json({ error: 'User not found in authentication records' });
+        }
+
+        // Returns the full Supabase Auth user object (metadata, email, provider data, etc.)
+        res.json(user);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
-
-    const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', req.session.userId)
-        .single();
-
-    if (error || !data) {
-        return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json(data);
 });
 
 
