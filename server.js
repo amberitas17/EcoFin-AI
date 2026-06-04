@@ -25,7 +25,7 @@ const queryString = require('querystring'); // Add this line at the top
 const app = express();
 
 // ─── Track processed OAuth codes to prevent duplicate processing ───────────────
-const processedCodes = new Set();
+const processedCodes = new Map(); // Maps code -> { userId, userName, redirected }
 
 // ─── CORS Setup (Allow Credentials) ───────────────
 app.use(cors({
@@ -103,14 +103,29 @@ app.get('/auth/callback', async (req, res) => {
 
     // Prevent duplicate code processing
     if (processedCodes.has(code)) {
-        console.warn('[EcoFin] ⚠️ Code already processed, rejecting duplicate');
-        return res.redirect('/dashboard.html'); // Silently redirect to dashboard
+        const stored = processedCodes.get(code);
+        console.warn('[EcoFin] ⚠️ Code already processed, using stored session');
+        
+        // Set session from the first successful request
+        req.session.userId = stored.userId;
+        req.session.userName = stored.userName;
+        req.session.loggedIn = true;
+        
+        req.session.save((err) => {
+            if (err) {
+                console.error('[EcoFin] ❌ Session save error:', err);
+                return res.redirect('/login.html?error=session_failed');
+            }
+            console.log(`[EcoFin] ✅ Session established from stored data: ${stored.userId}`);
+            res.redirect('/dashboard.html');
+        });
+        return;
     }
 
     try {
-        // Mark code as processed IMMEDIATELY to prevent race conditions
-        processedCodes.add(code);
-        console.log('[EcoFin] ✅ Code marked as processed');
+        // Mark code as processing IMMEDIATELY to prevent race conditions
+        processedCodes.set(code, { userId: null, userName: null, redirected: false });
+        console.log('[EcoFin] ✅ Code marked as processing');
 
         // Step 1: Exchange code with Facebook for access token (NOT with Supabase)
         console.log('[EcoFin] 🔄 Exchanging code with Facebook for access token...');
@@ -183,6 +198,9 @@ app.get('/auth/callback', async (req, res) => {
                 console.error('[EcoFin] ❌ Session save error:', err);
                 return res.redirect('/login.html?error=session_failed');
             }
+            
+            // Store successful session data for duplicate requests
+            processedCodes.set(code, { userId, userName: name, redirected: true });
             console.log(`[EcoFin] ✅ Session established: ${userId}`);
             res.redirect('/dashboard.html');
         });
