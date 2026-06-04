@@ -163,7 +163,15 @@ app.get('/auth/callback', async (req, res) => {
         req.session.loggedIn = true;
 
         // Save session explicitly before redirecting to prevent race conditions
-         res.redirect('/dashboard.html');
+        res.session.save((err) => {
+            if (err) {
+                console.error('[EcoFin] ❌ Session save error after Facebook login:', err);
+                return res.redirect('/login.html?error=session_failed');
+            }
+            console.log(`[EcoFin] ✅ Session established for Facebook user: ${user.id}`);
+            res.redirect('/dashboard.html');
+        }
+        );
 
     }
     catch (err) {
