@@ -111,6 +111,18 @@ app.get('/auth/callback', async (req, res) => {
         name: user.user_metadata?.full_name || user.user_metadata?.name,
         email: user.email,
         facebook_id: facebookId,
+        psid: facebookId ? `psid_${facebookId}` : null,
+        whatsapp: null,
+        waba_id: null,
+        total_catches: 0,
+        fishing_hours: 0,
+        achievements: 0,
+        success_rate: 0,
+        member_since: new Date().toLocaleDateString('en-US', {
+            month: 'long', year: 'numeric'
+        }),
+        messenger_connected: false,
+        whatsapp_connected: false,
         location: 'Philippines',
         messenger_connected: false,
         whatsapp_connected: false,
