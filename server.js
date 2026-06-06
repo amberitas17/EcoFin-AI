@@ -241,6 +241,11 @@ app.get('/auth/messenger/callback', async (req, res) => {
         console.warn('[EcoFin] ⚠️ No code received — user may have cancelled login');
         return res.redirect('/login.html?error=cancelled');
     }
+    if (req.session.isHandlingOAuth) {
+        console.log('[EcoFin] ⚠️ OAuth already in progress, ignoring duplicate callback.');
+        return res.redirect('/dashboard.html'); 
+    }
+    req.session.isHandlingOAuth = true;
 
     // ── DEBOUNCE DOUBLE REQUESTS ───────────────────────────
     if (processedCodes.has(code)) {
