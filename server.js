@@ -244,122 +244,151 @@ const activeAuthPromises = new Map();
 app.get('/auth/messenger/callback', async (req, res) => {
     const code = req.query.code;
     requestCounter++;
-    console.log(`[EcoFin] 🚨 Internal Request Hit Count: #${requestCounter} for code: ${req.query.code}`);
+
+    console.log(`[EcoFin] 🚨 Request #${requestCounter} for code: ${code}`);
 
     if (!code) {
         console.warn('[EcoFin] ⚠️ No code received.');
         return res.redirect('/login.html?error=cancelled');
     }
 
-    // ─── CRITICAL STEP: JOIN ONGOING PROMISE ────────────────────────────
-    // If request #2 or #3 hits, they stop right here and wait for request #1 to finish.
+    // ✅ STEP 1: Handle duplicates immediately
     if (activeAuthPromises.has(code)) {
-    console.log('[EcoFin] 🛑 Request duplicated. Waiting...');
-    try {
-        const sharedUserData = await activeAuthPromises.get(code);
+        console.log('[EcoFin] 🛑 Duplicate request waiting...');
 
-        req.session.userId = sharedUserData.userId;
-        req.session.userName = sharedUserData.name;
+        try {
+            const sharedUserData = await activeAuthPromises.get(code);
+
+            req.session.userId = sharedUserData.userId;
+            req.session.userName = sharedUserData.name;
+            req.session.loggedIn = true;
+
+            return req.session.save(() => res.redirect('/dashboard.html'));
+        } catch (err) {
+            console.error('[EcoFin] ❌ Duplicate failed:', err);
+            return res.redirect('/login.html?error=failed');
+        }
+    }
+
+    // ✅ STEP 2: LOCK IMMEDIATELY (NO GAP)
+    let resolvePromise, rejectPromise;
+
+    const lockPromise = new Promise((resolve, reject) => {
+        resolvePromise = resolve;
+        rejectPromise = reject;
+    });
+
+    activeAuthPromises.set(code, lockPromise);
+
+    try {
+        // ✅ TOKEN REQUEST (FIXED)
+        const tokenRes = await axios.get(
+            'https://graph.facebook.com/v19.0/oauth/access_token',
+            {
+                params: {
+                    client_id: process.env.APP_ID,
+                    client_secret: process.env.APP_SECRET,
+                    redirect_uri: process.env.REDIRECT_URI,
+                    code,
+                },
+                timeout: 10000
+            }
+        );
+
+        const accessToken = tokenRes.data.access_token;
+
+        if (!accessToken) {
+            throw new Error('Access token missing');
+        }
+
+        console.log('[EcoFin] ✅ ACCESS TOKEN OK');
+
+        // ✅ PROFILE REQUEST (FIXED)
+        const profileRes = await axios.get(
+            'https://graph.facebook.com/me',
+            {
+                params: {
+                    access_token: accessToken,
+                    fields: 'id,name,email'
+                },
+                timeout: 10000
+            }
+        );
+
+        console.log('[EcoFin] ✅ FB PROFILE:', profileRes.data);
+
+        const { id: facebookUserId, name, email } = profileRes.data;
+
+        // ✅ HARD VALIDATION (PREVENT fb_undefined)
+        if (!facebookUserId || !name) {
+            throw new Error('Invalid Facebook profile data');
+        }
+
+        console.log(`[EcoFin] 🚀 Verified: ${name}`);
+
+        // ✅ DATABASE LOGIC
+        let userId;
+        const existingUser = await getUserByFacebookId(facebookUserId);
+
+        if (req.session.loggedIn && req.session.userId) {
+            userId = req.session.userId;
+            await updateUser(userId, { facebook_id: facebookUserId });
+
+        } else if (existingUser) {
+            userId = existingUser.id;
+            await updateUser(userId, { name, facebook_id: facebookUserId });
+
+        } else {
+            userId = `fb_${facebookUserId}`;
+
+            await saveUser(userId, {
+                name,
+                email: email || '',
+                facebook_id: facebookUserId,
+                location: 'Philippines',
+                total_catches: 0,
+                fishing_hours: 0,
+                achievements: 0,
+                success_rate: 0,
+                member_since: new Date().toLocaleDateString('en-US', {
+                    month: 'long',
+                    year: 'numeric'
+                }),
+            });
+        }
+
+        const result = { userId, name };
+
+        // ✅ RESOLVE waiting requests
+        if (resolvePromise) resolvePromise(result);
+
+        // ✅ SET SESSION
+        req.session.userId = userId;
+        req.session.userName = name;
         req.session.loggedIn = true;
 
+        console.log(`[EcoFin] ✅ Login complete: ${name}`);
+
         return req.session.save(() => res.redirect('/dashboard.html'));
-    } catch {
-        return res.redirect('/login.html?error=failed');
-    }
-}
 
-// ✅ STEP 1: CREATE MANUAL PROMISE CONTROL (LOCK IMMEDIATELY)
-let resolvePromise, rejectPromise;
-
-const lockPromise = new Promise((resolve, reject) => {
-    resolvePromise = resolve;
-    rejectPromise = reject;
-});
-
-// ✅ STORE LOCK IMMEDIATELY — NO GAP
-activeAuthPromises.set(code, lockPromise);
-
-try {
-    // ✅ NOW run your main logic safely
-    const tokenRes = await axios.get(
-        'https://graph.facebook.com/v19.0/oauth/access_token',
-        {
-            params: {
-                client_id: process.env.APP_ID,
-                client_secret: process.env.APP_SECRET,
-                redirect_uri: process.env.REDIRECT_URI,
-                code,
-            }
-        }
-    );
-
-    const accessToken = tokenRes.data.access_token;
-
-    const profileRes = await axios.get(
-        'https://graph.facebook.com/me',
-        {
-            params: {
-                access_token: accessToken,
-                fields: 'id,name,email'
-            }
-        }
-    );
-
-    const { id: facebookUserId, name, email } = profileRes.data;
-
-    if (!facebookUserId || !name) {
-        throw new Error('Invalid FB data');
-    }
-
-    console.log(`[EcoFin] 🚀 Main process verified: ${name}`);
-
-    // ✅ DB logic (unchanged)
-    let userId;
-    const existingUser = await getUserByFacebookId(facebookUserId);
-
-    if (req.session.loggedIn && req.session.userId) {
-        userId = req.session.userId;
-        await updateUser(userId, { facebook_id: facebookUserId });
-    } else if (existingUser) {
-        userId = existingUser.id;
-        await updateUser(userId, { name, facebook_id: facebookUserId });
-    } else {
-        userId = `fb_${facebookUserId}`;
-        await saveUser(userId, {
-            name,
-            email: email || '',
-            facebook_id: facebookUserId,
-            location: 'Philippines',
-            total_catches: 0,
-            fishing_hours: 0,
-            achievements: 0,
-            success_rate: 0,
-            member_since: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+    } catch (err) {
+        console.error('[EcoFin] ❌ FULL ERROR:', {
+            message: err.message,
+            code: err.code,
+            status: err.response?.status,
+            response: err.response?.data,
         });
+
+        if (rejectPromise) rejectPromise(err);
+
+        if (!res.headersSent) {
+            return res.redirect('/login.html?error=failed');
+        }
+
+    } finally {
+        // ✅ CLEANUP LOCK
+        activeAuthPromises.delete(code);
     }
-
-    const result = { userId, name };
-
-    // ✅ RESOLVE ALL WAITING REQUESTS
-    resolvePromise(result);
-
-    // ✅ SET SESSION for request #1
-    req.session.userId = userId;
-    req.session.userName = name;
-    req.session.loggedIn = true;
-
-    console.log(`[EcoFin] ✅ Primary login done: ${name}`);
-
-    return req.session.save(() => res.redirect('/dashboard.html'));
-
-} catch (err) {
-    rejectPromise(err);
-    console.error('[EcoFin] ❌ OAuth Error:', err.message);
-    return res.redirect('/login.html?error=failed');
-
-} finally {
-    activeAuthPromises.delete(code);
-}
 });
 
 
