@@ -252,17 +252,21 @@ app.get('/auth/messenger/callback', async (req, res) => {
     }
 
     // ─── CRITICAL STEP: JOIN ONGOING PROMISE ────────────────────────────
+    // If request #2 or #3 hits, they stop right here and wait for request #1 to finish.
     if (activeAuthPromises.has(code)) {
         console.log('[EcoFin] 🛑 Request duplicated. Waiting for the main process to complete...');
         try {
+            // Wait for request #1 to finish downloading everything from FB & saving to DB
             const sharedUserData = await activeAuthPromises.get(code);
             
+            // Apply the logged-in session data to this specific request's browser session
             req.session.userId = sharedUserData.userId;
-            req.session.userName = sharedUserData.name;
+            req.session.userName = sharedUserData.name; // Perfectly matches return key now
             req.session.loggedIn = true;
 
             console.log(`[EcoFin] 🧠 Duplicate request safely attached to session for: ${sharedUserData.name}`);
             
+            // Fix: Force save the session before redirecting to avoid "null" UI race conditions
             return req.session.save((err) => {
                 if (err) console.error('[EcoFin] ❌ Duplicate session save failed:', err);
                 res.redirect('/dashboard.html');
@@ -273,8 +277,9 @@ app.get('/auth/messenger/callback', async (req, res) => {
     }
 
     // ─── RUN THE MAIN ACTION (REQUEST #1) ───────────────────────────────
+    // Create an asynchronous execution block that request #2 and #3 can listen to
     const authProcessPromise = (async () => {
-        // Exchange code for token using the official Graph API endpoint
+        // Exchange code for token
         const tokenRes = await axios.get('https://facebook.com', {
             params: {
                 client_id: process.env.APP_ID,
@@ -284,35 +289,15 @@ app.get('/auth/messenger/callback', async (req, res) => {
             }
         });
 
-        const accessToken = tokenRes.data?.access_token;
-        if (!accessToken) {
-            console.error('[EcoFin] ❌ Failed to extract access_token:', tokenRes.data);
-            throw new Error('Failed to obtain access token from Facebook.');
-        }
-
-        // Fetch target user profile from the Graph endpoint
+        const accessToken = tokenRes.data.access_token;
         const profileRes = await axios.get('https://facebook.com', {
-            params: { 
-                access_token: accessToken, 
-                fields: 'id,name,email' 
-            }
+            params: { access_token: accessToken, fields: 'id,name,email' }
         });
 
-        console.log('[EcoFin] 🔵 Raw FB Profile Payload:', profileRes.data);
+        const { id: facebookUserId, name, email } = profileRes.data;
+        console.log(`[EcoFin] 🚀 Main process verified: ${name}`);
 
-        const facebookUserId = profileRes.data?.id;
-        const name = profileRes.data?.name;
-        const email = profileRes.data?.email;
-
-        // CRITICAL FIX: Stop execution instantly if Facebook data is missing or undefined
-        if (!facebookUserId || !name || facebookUserId === 'undefined') {
-            console.error('[EcoFin] ❌ Invalid payload structural integrity. Aborting database sequence.');
-            throw new Error(`Invalid data received from FB Profile API. Missing valid id or name.`);
-        }
-
-        console.log(`[EcoFin] 🚀 Main process verified: ${name} (${facebookUserId})`);
-
-        // Handle Database logic - This will now accurately query for '2758894740402123'
+        // Handle Database logic
         const existingUser = await getUserByFacebookId(facebookUserId);
         let userId;
 
@@ -322,7 +307,6 @@ app.get('/auth/messenger/callback', async (req, res) => {
         } else if (existingUser) {
             userId = existingUser.id;
             await updateUser(userId, { name, facebook_id: facebookUserId });
-            console.log(`[EcoFin] 🔄 Linked existing user successfully: ${name} (ID: ${userId})`);
         } else {
             userId = `fb_${facebookUserId}`;
             await saveUser(userId, {
@@ -336,7 +320,6 @@ app.get('/auth/messenger/callback', async (req, res) => {
                 success_rate: 0,
                 member_since: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
             });
-            console.log(`[EcoFin] 🆕 Created a brand new user row for: ${name}`);
         }
 
         // Fire and forget notifications in the background
@@ -353,6 +336,7 @@ app.get('/auth/messenger/callback', async (req, res) => {
             }
         })();
 
+        // Return data object so duplicate requests can copy it to their sessions
         return { userId, name };
     })();
 
@@ -360,6 +344,7 @@ app.get('/auth/messenger/callback', async (req, res) => {
     activeAuthPromises.set(code, authProcessPromise);
 
     try {
+        // Execute the main promise for request #1
         const userData = await authProcessPromise;
 
         // Set session for request #1
@@ -367,6 +352,9 @@ app.get('/auth/messenger/callback', async (req, res) => {
         req.session.userName = userData.name;
         req.session.loggedIn = true;
 
+        console.log(`[EcoFin] ✅ Primary request completed login for: ${userData.name}`);
+
+        // Fix: Force save the session before redirecting to avoid "null" UI race conditions
         return req.session.save((err) => {
             if (err) console.error('[EcoFin] ❌ Primary session save failed:', err);
             res.redirect('/dashboard.html');
@@ -375,14 +363,15 @@ app.get('/auth/messenger/callback', async (req, res) => {
         console.error('[EcoFin] ❌ Main OAuth Handler Error:', err.response?.data || err.message);
         
         if (err.response?.data?.error?.code === 100) {
+            // Fix: Force save the session even on conditional bypass redirect
             return req.session.save(() => res.redirect('/dashboard.html'));
         }
         return res.redirect('/login.html?error=failed');
     } finally {
+        // Optimization: Instantly wipe from cache when done to clean memory instead of global 30s delay
         activeAuthPromises.delete(code);
     }
 });
-
 
 
 
