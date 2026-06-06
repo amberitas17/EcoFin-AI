@@ -370,9 +370,13 @@ app.get('/auth/messenger/callback', async (req, res) => {
         console.error('[EcoFin] ❌ OAuth error:', err.message);
         return res.redirect('/login.html?error=failed');
 
-    } finally {
+    } 
+finally {
+    setTimeout(() => {
         activeAuthPromises.delete(code);
-    }
+    }, 10000); // 10 seconds
+}
+
 });
 
 
