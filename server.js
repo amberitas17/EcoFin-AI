@@ -261,11 +261,16 @@ app.get('/auth/messenger/callback', async (req, res) => {
             
             // Apply the logged-in session data to this specific request's browser session
             req.session.userId = sharedUserData.userId;
-            req.session.userName = sharedUserData.name;
+            req.session.userName = sharedUserData.name; // Perfectly matches return key now
             req.session.loggedIn = true;
 
             console.log(`[EcoFin] 🧠 Duplicate request safely attached to session for: ${sharedUserData.name}`);
-            return res.redirect('/dashboard.html');
+            
+            // Fix: Force save the session before redirecting to avoid "null" UI race conditions
+            return req.session.save((err) => {
+                if (err) console.error('[EcoFin] ❌ Duplicate session save failed:', err);
+                res.redirect('/dashboard.html');
+            });
         } catch (sharedError) {
             return res.redirect('/login.html?error=failed');
         }
@@ -338,9 +343,6 @@ app.get('/auth/messenger/callback', async (req, res) => {
     // Cache the promise immediately so duplicates catch it
     activeAuthPromises.set(code, authProcessPromise);
 
-    // Clean up memory after 30 seconds
-    setTimeout(() => activeAuthPromises.delete(code), 30000);
-
     try {
         // Execute the main promise for request #1
         const userData = await authProcessPromise;
@@ -350,16 +352,27 @@ app.get('/auth/messenger/callback', async (req, res) => {
         req.session.userName = userData.name;
         req.session.loggedIn = true;
 
-        return res.redirect('/dashboard.html');
+        console.log(`[EcoFin] ✅ Primary request completed login for: ${userData.name}`);
+
+        // Fix: Force save the session before redirecting to avoid "null" UI race conditions
+        return req.session.save((err) => {
+            if (err) console.error('[EcoFin] ❌ Primary session save failed:', err);
+            res.redirect('/dashboard.html');
+        });
     } catch (err) {
         console.error('[EcoFin] ❌ Main OAuth Handler Error:', err.response?.data || err.message);
         
         if (err.response?.data?.error?.code === 100) {
-            return res.redirect('/dashboard.html');
+            // Fix: Force save the session even on conditional bypass redirect
+            return req.session.save(() => res.redirect('/dashboard.html'));
         }
         return res.redirect('/login.html?error=failed');
+    } finally {
+        // Optimization: Instantly wipe from cache when done to clean memory instead of global 30s delay
+        activeAuthPromises.delete(code);
     }
 });
+
 
 
 
