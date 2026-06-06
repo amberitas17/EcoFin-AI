@@ -299,7 +299,7 @@
                     font-weight: bold;
                     font-size: 15px;
                 ">Logout</a>
-                <button id="deleteAccountBtn" style="
+                <!-- <button id="deleteAccountBtn" style="
                     display: block;
                     width: 100%;
                     text-align: center;
@@ -315,7 +315,7 @@
                     cursor: pointer;
                     ">
                     Delete Account
-                </button>
+                </button> -->
 
             </div>
 
@@ -406,9 +406,9 @@
                 const avatar = document.getElementById('profileAvatar');
                 const testImg = new Image();
                 testImg.onload = () => {
-                    avatar.src = `https://platform-lookaside.fbsbx.com/platform/profilepic/?asid=${currentUser.facebook_id}`;
+                    avatar.src = `https://graph.facebook.com/${currentUser.facebook_id}/picture?type=large`;
                 };
-                testImg.src = `https://platform-lookaside.fbsbx.com/platform/profilepic/?asid=${currentUser.facebook_id}`;
+                testImg.src = `https://graph.facebook.com/${currentUser.facebook_id}/picture?type=large`;
             }
 
             document.getElementById('profileName').textContent = currentUser.name || '--';
