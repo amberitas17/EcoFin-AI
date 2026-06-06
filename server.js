@@ -464,8 +464,6 @@ app.post('/auth/login', async (req, res) => {
                 name,
                 email,
                 facebook_id:         null,
-                psid:                null,
-                whatsapp:            null,
                 location:            'Philippines',
                 total_catches:       0,
                 fishing_hours:       0,
@@ -474,8 +472,6 @@ app.post('/auth/login', async (req, res) => {
                 member_since:        new Date().toLocaleDateString('en-US', {
                     month: 'long', year: 'numeric'
                 }),
-                messenger_connected: false,
-                whatsapp_connected:  false,
             });
         }
 
@@ -516,18 +512,18 @@ app.post('/auth/login', async (req, res) => {
     console.log(`[EcoFin] ✅ Session initialized for ${userId}`);
 
     // ── Send login notification to Messenger and/or WhatsApp ──
-    const loginUser = userData;
-    if (loginUser) {
-        const loginMsg = `👋 Hi ${loginUser.name}! You've just logged in to EcoFin AI.`;
-        if (loginUser.psid && loginUser.messenger_connected) {
-            await sendMessengerMessage(loginUser.psid, loginMsg);
-            await sendWelcomeButtons(loginUser.psid);
-        }
-        if (loginUser.whatsapp && loginUser.whatsapp_connected) {
-            await sendWhatsAppMessage(loginUser.whatsapp, loginMsg);
-            await sendWhatsAppMenu(loginUser.whatsapp);
-        }
-    }
+    // const loginUser = userData;
+    // if (loginUser) {
+    //     const loginMsg = `👋 Hi ${loginUser.name}! You've just logged in to EcoFin AI.`;
+    //     if (loginUser.psid && loginUser.messenger_connected) {
+    //         await sendMessengerMessage(loginUser.psid, loginMsg);
+    //         await sendWelcomeButtons(loginUser.psid);
+    //     }
+    //     if (loginUser.whatsapp && loginUser.whatsapp_connected) {
+    //         await sendWhatsAppMessage(loginUser.whatsapp, loginMsg);
+    //         await sendWhatsAppMenu(loginUser.whatsapp);
+    //     }
+    // }
 
     // Wrap your JSON response so it waits for the session to save on Render
     req.session.save((err) => {
@@ -586,9 +582,6 @@ app.post('/auth/signup', async (req, res) => {
             name,
             email,
             facebook_id:         null,
-            psid:                null,
-            whatsapp:            null,
-            waba_id:             null,
             location:            'Philippines',
             total_catches:       0,
             fishing_hours:       0,
@@ -597,8 +590,6 @@ app.post('/auth/signup', async (req, res) => {
             member_since:        new Date().toLocaleDateString('en-US', {
                 month: 'long', year: 'numeric'
             }),
-            messenger_connected: false,
-            whatsapp_connected:  false,
         });
 
         console.log(`[EcoFin] ✅ New signup (pending verification): ${email} (${name})`);
