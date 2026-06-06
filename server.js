@@ -173,14 +173,14 @@ app.get('/auth/callback', async (req, res) => {
     catch (err) {
         const errorData = err.response?.data?.error || {};
         
-        // Safety Net: If this is a duplicate request code error, but the user session 
-        // was already successfully established by the twin request, let them pass!
+        // Safety Net: This authorization code was already used.
         if (errorData.code === 100 && errorData.error_subcode === 36009) {
             console.log('[EcoFin] ⚠️ Duplicate OAuth request intercepted. Code already used.');
-            if (req.session && req.session.loggedIn) {
-                console.log('[EcoFin] ↩️ Active session found. Redirecting user straight to dashboard.');
-                return res.redirect('/dashboard.html');
-            }
+            console.log('[EcoFin] ↩️ Assuming a twin request succeeded. Redirecting straight to dashboard.');
+            
+            // FORCE a redirect to the dashboard. If the twin request won the race, 
+            // the cookie is already on its way to the browser, and they will log in fine.
+            return res.redirect('/dashboard.html');
         }
 
         console.log('[EcoFin] ❌ Facebook OAuth error:', err.response?.data || err.message);
