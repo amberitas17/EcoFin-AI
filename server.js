@@ -254,34 +254,13 @@ app.get('/auth/messenger/callback', async (req, res) => {
         const accessToken = tokenRes.data.access_token;
 
         const profileRes = await axios.get('https://graph.facebook.com/me', {
-            params: { access_token: accessToken, fields: 'id,name' }
+            params: { access_token: accessToken, fields: 'id,name,email' }
         });
-        const { id: facebookUserId, name } = profileRes.data;
+        const { id: facebookUserId, name, email } = profileRes.data;
 
         console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookUserId})`);
 
         // ── Retrieve PSID using user's access token ───────────
-        let psid = '';
-        try {
-            const psidRes = await axios.get(
-                `https://graph.facebook.com/v19.0/${facebookUserId}`,
-                { params: { fields: 'ids_for_pages', access_token: accessToken } }
-            );
-            psid = psidRes.data?.ids_for_pages?.data?.[0]?.id || '';
-            if (psid) {
-                console.log(`[EcoFin] ✅ PSID retrieved: ${psid}`);
-            } else {
-                // Fallback: use facebook user ID as PSID
-                psid = facebookUserId;
-                console.log(`[EcoFin] ℹ️ Using facebookUserId as PSID: ${psid}`);
-            }
-        } catch (psidErr) {
-            console.warn('[EcoFin] ⚠️ Could not retrieve PSID:', psidErr.response?.data || psidErr.message);
-            // Fallback: use facebook user ID as PSID
-            psid = facebookUserId;
-            console.log(`[EcoFin] ℹ️ Using facebookUserId as PSID fallback: ${psid}`);
-        }
-
         const existingUser = await getUserByFacebookId(facebookUserId);
         let userId;
 
@@ -290,8 +269,6 @@ app.get('/auth/messenger/callback', async (req, res) => {
             userId = req.session.userId;
             await updateUser(userId, {
                 facebook_id:         facebookUserId,
-                psid:                psid || '',
-                messenger_connected: !!psid,
             });
             console.log(`[EcoFin] ✅ Messenger linked to existing user: ${userId}`);
         } else if (existingUser) {
@@ -299,18 +276,14 @@ app.get('/auth/messenger/callback', async (req, res) => {
             await updateUser(userId, {
                 name,
                 facebook_id:         facebookUserId,
-                psid:                psid || existingUser.psid || '',
-                messenger_connected: !!psid,
             });
             console.log(`[EcoFin] ✅ Existing Facebook user updated: ${userId}`);
         } else {
             userId = `fb_${facebookUserId}`;
             await saveUser(userId, {
                 name,
-                email:               '',
+                email:               email || '',
                 facebook_id:         facebookUserId,
-                psid:                psid || '',
-                whatsapp:            '',
                 location:            'Philippines',
                 total_catches:       0,
                 fishing_hours:       0,
@@ -319,8 +292,6 @@ app.get('/auth/messenger/callback', async (req, res) => {
                 member_since:        new Date().toLocaleDateString('en-US', {
                     month: 'long', year: 'numeric'
                 }),
-                messenger_connected: !!psid,
-                whatsapp_connected:  false,
             });
             console.log(`[EcoFin] ✅ New Facebook user created: ${userId}`);
         }
@@ -330,11 +301,11 @@ app.get('/auth/messenger/callback', async (req, res) => {
         req.session.loggedIn = true;
 
         // ── Send login notification to Messenger and/or WhatsApp ──
-        const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
-        if (psid) {
-            await sendMessengerMessage(psid, fbLoginMsg);
-            await sendWelcomeButtons(psid);
-        }
+        // const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
+        // if (psid) {
+        //     await sendMessengerMessage(psid, fbLoginMsg);
+        //     await sendWelcomeButtons(psid);
+        // }
 
         const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
         if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
