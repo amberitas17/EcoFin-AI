@@ -84,23 +84,7 @@
             if (e.key === 'Enter') document.getElementById('loginBtn').click();
         });
 
-        document.getElementById('fbLoginBtn').addEventListener('click', function (e) {
-            e.preventDefault();
-            const btn = this;
-
-            // 1. Guard against double-clicks or multiple triggers
-            if (btn.disabled || btn.classList.contains('processing')) {
-                return;
-            }
-
-            // 2. Lock the button immediately
-            btn.disabled = true;
-            btn.classList.add('processing');
-
-            // 3. Provide visual feedback so the user knows it's loading
-            btn.innerHTML = 'Connecting to Facebook...';
-
-            // 4. Safely forward to your OAuth endpoint
+        document.getElementById('fbLoginBtn').addEventListener('click', function () {
             window.location.href = '/auth/facebook';
         });
 
@@ -113,24 +97,9 @@
             document.getElementById('verifiedMsg').style.display = 'block';
         }
 
-        /*fetch('/api/me')
+        fetch('/api/me')
             .then(res => { if (res.ok) window.location.href = '/dashboard.html'; })
-            .catch(() => {});*/
-
-        // ONLY run this on login.html
-        async function checkExistingSession() {
-            try {
-                const res = await fetch('/api/me', { credentials: 'include' });
-                if (res.ok) {
-                    // User has a valid cookie already, skip login form
-                    window.location.href = '/dashboard.html';
-                }
-                // If NOT res.ok, do nothing! Let them stay on login.html to click the button.
-            } catch (err) {
-                console.error("Session check skipped:", err);
-            }
-        }
-        checkExistingSession();
+            .catch(() => {});
     </script>
 </body>
 </html>

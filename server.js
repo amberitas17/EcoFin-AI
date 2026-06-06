@@ -4,10 +4,6 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const session = require('express-session');
-const cors = require('cors');
-const cookieParser = require('cookie-parser');
-
-
 
 const webhookRoute = require('./src/routes/webhook');
 const {
@@ -18,45 +14,22 @@ const {
     saveCatch,
     countCatches,
     deleteCatches,
-    deleteUser,
     supabase
 } = require('./src/services/supabase');
 const { handleSystemMessage, sendMessengerMessage, sendWhatsAppMessage, sendWelcomeButtons, sendWhatsAppMenu } = require('./src/services/messengerService');
-// const { createClient } = require('@supabase/supabase-js');
-
-// const supabase = createClient(
-//     process.env.SUPABASE_URL,
-//     process.env.SUPABASE_SERVICE_KEY
-// );
-const queryString = require('querystring'); // Add this line at the top
 
 const app = express();
 
-// ─── CORS Setup (Allow Credentials) ───────────────
-app.use(cors({
-    origin: process.env.APP_URL || 'https://ecofin-ai.onrender.com',
-    credentials: true,
-}));
-
 app.use(bodyParser.json());
-app.set('trust proxy', 1);
-app.use(cookieParser('ecofin-secret-key')); // Use the exact same secret here
+app.use(express.static(__dirname));
+
+// ─── Session Middleware ───────────────────────────────────────
 app.use(session({
-    name: 'ecofin.sid',
     secret: 'ecofin-secret-key',
     resave: false,
     saveUninitialized: false,
-    proxy: true,
-    cookie: {
-        secure: true,
-        httpOnly: true,
-        sameSite: 'none',
-        maxAge: 24 * 60 * 60 * 1000 // 1 day expiration
-    }
+    cookie: { maxAge: 24 * 60 * 60 * 1000 }
 }));
-app.use(express.static(__dirname));
-
-
 
 app.use('/webhook', webhookRoute);
 
@@ -74,7 +47,6 @@ app.get('/signup.html', (req, res) => {
 app.get('/login.html', (req, res) => {
     res.sendFile(__dirname + '/login.html');
 });
-
 
 // ─────────────────────────────────────────────────────────────
 // A. Facebook OAuth — Step 1: Redirect to Facebook Login
@@ -151,22 +123,17 @@ app.get('/login.html', (req, res) => {
 // });
 
 app.get('/auth/facebook', (req, res) => {
-    // CRITICAL: Force the browser to completely ignore its cache for this request
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
+    console.log('[EcoFin] APP_ID:', process.env.APP_ID);
+    console.log('[EcoFin] REDIRECT_URI:', process.env.REDIRECT_URI);
 
-    const stringifiedParams = queryString.stringify({
-        client_id: process.env.APP_ID,
-        redirect_uri: process.env.REDIRECT_URI,
-        scope: ['public_profile', 'email'].join(','),
+    const params = new URLSearchParams({
+        client_id:     process.env.APP_ID,
+        redirect_uri:  process.env.REDIRECT_URI,
+        scope:         'public_profile',
         response_type: 'code',
-        auth_type: 'rerequest', // Forces a fresh authorization block
-        display: 'popup'
     });
 
-    const facebookLoginUrl = `https://www.facebook.com/v19.0/dialog/oauth?${stringifiedParams}`;
-    res.redirect(facebookLoginUrl);
+    res.redirect(`https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`);
 });
 
 // app.get('/auth/facebook/callback', async (req, res) => {
@@ -314,168 +281,147 @@ app.get('/auth/facebook', (req, res) => {
 //     }
 // });
 // 1. Put this memory cache near the top of your server file (outside the routes)
-const processedCodes = new Map();
+let requestCounter = 0;
 
-// Clean up memory leaks by wiping old codes after 10 seconds
-setInterval(() => {
-    const now = Date.now();
-    for (const [code, timestamp] of processedCodes.entries()) {
-        if (now - timestamp > 10000) processedCodes.delete(code);
-    }
-}, 10000);
+// Global cache that stores the ongoing login promise for each code
+const activeAuthPromises = new Map();
 
-// ... your other code ...
-
-app.get('/auth/facebook/callback', async (req, res) => {
-    console.log('================================');
-    console.log('FACEBOOK CALLBACK HIT');
-    console.log('TIME:', new Date().toISOString());
-    console.log('CODE:', req.query.code);
-    console.log('================================');
-
+app.get('/auth/messenger/callback', async (req, res) => {
     const code = req.query.code;
-    let facebookUserId = null;
-    let name = null;
+
+    console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
 
     if (!code) {
-        console.warn('[EcoFin] ⚠️ No code received — user may have cancelled login');
         return res.redirect('/login.html?error=cancelled');
     }
 
-    // 1. CRITICAL CONCURRENCY LOCK: Check and lock immediately!
-    if (processedCodes.has(code)) {
-        console.log(`[EcoFin] 🛡️ Blocked simultaneous or delayed race-hit for code. Redirecting.`);
-        
-        // If Hit #1 already completed and set session parameters, keep them alive
-        if (req.session && req.session.userId) {
+    // ✅ DUPLICATE HANDLER
+    if (activeAuthPromises.has(code)) {
+        console.log('[EcoFin] 🛑 Duplicate request waiting...');
+
+        try {
+            const userData = await activeAuthPromises.get(code);
+
+            req.session.userId = userData.userId;
+            req.session.userName = userData.name;
             req.session.loggedIn = true;
+
+            return req.session.save(() => res.redirect('/dashboard.html'));
+        } catch {
+            return res.redirect('/login.html?error=failed');
         }
-
-        return req.session.save(() => {
-            res.redirect('/dashboard.html');
-        });
     }
 
-    // 2. Lock it right here BEFORE any asynchronous database or API calls can execute
-    processedCodes.set(code, Date.now());
+    // ✅ MAIN PROCESS (LOCKED)
+    const authPromise = (async () => {
 
-    if (req.session && (req.session.loggedIn || req.session.userId)) {
-        console.log(`[EcoFin] 🚀 Session already exists for ${req.session.userId}. Bypassing exchange.`);
-        return req.session.save(() => {
-            res.redirect('/dashboard.html');
-        });
-    }
-
-    console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
-    console.log('[EcoFin] Code received: YES');
-
-    try {
+        // 🔐 TOKEN
         const tokenRes = await axios.get(
             'https://graph.facebook.com/v19.0/oauth/access_token',
             {
                 params: {
-                    client_id:     process.env.APP_ID,
+                    client_id: process.env.APP_ID,
                     client_secret: process.env.APP_SECRET,
-                    redirect_uri:  process.env.REDIRECT_URI,
+                    redirect_uri: process.env.REDIRECT_URI,
                     code,
-                }
+                },
+                timeout: 10000
             }
         );
+
         const accessToken = tokenRes.data.access_token;
 
-        const profileRes = await axios.get('https://graph.facebook.com/me', {
-            params: { access_token: accessToken, fields: 'id,name,email,picture' }
-        });
-        
-        facebookUserId = profileRes.data.id;
-        name = profileRes.data.name;
-        const email = profileRes.data.email;
-
-        console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookUserId})`);
-
-        let psid = '';
-        try {
-            const psidRes = await axios.get(
-                `https://graph.facebook.com/v19.0/${facebookUserId}`,
-                { params: { fields: 'id, email, picture', access_token: accessToken } }
-            );
-            psid = psidRes.data?.id?.data?.[0]?.id || '';
-        } catch (psidErr) {
-            psid = facebookUserId;
+        if (!accessToken) {
+            throw new Error('Access token missing');
         }
 
+        console.log('[EcoFin] ✅ Token OK');
+
+        // 👤 PROFILE
+        const profileRes = await axios.get(
+            'https://graph.facebook.com/me',
+            {
+                params: {
+                    access_token: accessToken,
+                    fields: 'id,name,email'
+                },
+                timeout: 10000
+            }
+        );
+
+        const { id: facebookUserId, name, email } = profileRes.data;
+
+        if (!facebookUserId || !name) {
+            throw new Error('Invalid Facebook profile');
+        }
+
+        console.log(`[EcoFin] ✅ FB Login: ${name}`);
+
+        // 🗄️ DATABASE
         const existingUser = await getUserByFacebookId(facebookUserId);
         let userId;
 
         if (req.session.loggedIn && req.session.userId) {
+            // linking to existing account
             userId = req.session.userId;
-            await updateUser(userId, {
-                facebook_id:         facebookUserId,
-                psid:                psid || '',
-                messenger_connected: !!psid,
-                email:               email || '',
-            });
+
+            await updateUser(userId, { facebook_id: facebookUserId });
+
         } else if (existingUser) {
             userId = existingUser.id;
+
             await updateUser(userId, {
                 name,
-                facebook_id:         facebookUserId,
-                psid:                psid || existingUser.psid || '',
-                messenger_connected: !!psid,
-                email:               email || '',
+                facebook_id: facebookUserId
             });
+
         } else {
             userId = `fb_${facebookUserId}`;
+
             await saveUser(userId, {
                 name,
-                email:               email || '',
-                facebook_id:         facebookUserId,
-                psid:                psid || '',
-                whatsapp:            '',
-                location:            'Philippines',
-                total_catches:       0,
-                fishing_hours:       0,
-                achievements:        0,
-                success_rate:        0,
-                member_since:        new Date().toLocaleDateString('en-US', {
-                    month: 'long', year: 'numeric'
+                email: email || '',
+                facebook_id: facebookUserId,
+                location: 'Philippines',
+                total_catches: 0,
+                fishing_hours: 0,
+                achievements: 0,
+                success_rate: 0,
+                member_since: new Date().toLocaleDateString('en-US', {
+                    month: 'long',
+                    year: 'numeric'
                 }),
-                messenger_connected: !!psid,
-                whatsapp_connected:  false,
             });
         }
 
-        // 3. Session attributes setup
-        req.session.userId   = userId;
-        req.session.userName = name;
+        return { userId, name };
+    })();
+
+    // ✅ LOCK IMMEDIATELY
+    activeAuthPromises.set(code, authPromise);
+
+    try {
+        const result = await authPromise;
+
+        req.session.userId = result.userId;
+        req.session.userName = result.name;
         req.session.loggedIn = true;
 
-        req.session.save((saveErr) => {
-            if (saveErr) console.error('[EcoFin] Session save error:', saveErr);
-            console.log('SESSION AFTER SAVE:', req.session);
-            return res.redirect('/dashboard.html');
-        });
+        console.log(`[EcoFin] ✅ Login complete: ${result.name}`);
+
+        return req.session.save(() => res.redirect('/dashboard.html'));
 
     } catch (err) {
-        const errorData = err.response?.data?.error || {};
-        
-        // Secondary fallback checking
-        if (errorData.code === 100 && errorData.error_subcode === 36009) {
-            console.log('[EcoFin] ℹ️ Handled consumed token on fallback interceptor. Retaining session and redirecting.');
-            
-            if (facebookUserId) {
-                req.session.userId = `fb_${facebookUserId}`;
-                req.session.loggedIn = true;
-            }
+        console.error('[EcoFin] ❌ OAuth error:', err.message);
+        return res.redirect('/login.html?error=failed');
 
-            return req.session.save(() => {
-                res.redirect('/dashboard.html');
-            });
-        }
+    } 
+finally {
+    setTimeout(() => {
+        activeAuthPromises.delete(code);
+    }, 10000); // 10 seconds
+}
 
-        console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
-        res.redirect('/login.html?error=failed');
-    }
 });
 
 
