@@ -240,7 +240,8 @@ let requestCounter = 0;
 
 app.get('/auth/messenger/callback', async (req, res) => {
     const code = req.query.code;
-    requestCounter++;
+     requestCounter++;
+    console.log(`[EcoFin] 🚨 Internal Request Hit Count: #${requestCounter} for code: ${req.query.code}`);
     console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
     console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
 
