@@ -236,10 +236,11 @@ app.get('/auth/verify', (req, res) => {
 // Global memory map to track the status of code processing
 // Keep track of recently used codes to prevent duplicates
 const usedCodes = new Set();
+let requestCounter = 0;
 
 app.get('/auth/messenger/callback', async (req, res) => {
     const code = req.query.code;
-    
+    requestCounter++;
     console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
     console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
 
