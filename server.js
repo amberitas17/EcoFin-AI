@@ -254,123 +254,112 @@ app.get('/auth/messenger/callback', async (req, res) => {
     // ─── CRITICAL STEP: JOIN ONGOING PROMISE ────────────────────────────
     // If request #2 or #3 hits, they stop right here and wait for request #1 to finish.
     if (activeAuthPromises.has(code)) {
-        console.log('[EcoFin] 🛑 Request duplicated. Waiting for the main process to complete...');
-        try {
-            // Wait for request #1 to finish downloading everything from FB & saving to DB
-            const sharedUserData = await activeAuthPromises.get(code);
-            
-            // Apply the logged-in session data to this specific request's browser session
-            req.session.userId = sharedUserData.userId;
-            req.session.userName = sharedUserData.name; // Perfectly matches return key now
-            req.session.loggedIn = true;
+    console.log('[EcoFin] 🛑 Request duplicated. Waiting...');
+    try {
+        const sharedUserData = await activeAuthPromises.get(code);
 
-            console.log(`[EcoFin] 🧠 Duplicate request safely attached to session for: ${sharedUserData.name}`);
-            
-            // Fix: Force save the session before redirecting to avoid "null" UI race conditions
-            return req.session.save((err) => {
-                if (err) console.error('[EcoFin] ❌ Duplicate session save failed:', err);
-                res.redirect('/dashboard.html');
-            });
-        } catch (sharedError) {
-            return res.redirect('/login.html?error=failed');
-        }
+        req.session.userId = sharedUserData.userId;
+        req.session.userName = sharedUserData.name;
+        req.session.loggedIn = true;
+
+        return req.session.save(() => res.redirect('/dashboard.html'));
+    } catch {
+        return res.redirect('/login.html?error=failed');
     }
+}
 
-    // ─── RUN THE MAIN ACTION (REQUEST #1) ───────────────────────────────
-    // Create an asynchronous execution block that request #2 and #3 can listen to
-    const authProcessPromise = (async () => {
-        // Exchange code for token
-        const tokenRes = await axios.get('https://facebook.com', {
+// ✅ STEP 1: CREATE MANUAL PROMISE CONTROL (LOCK IMMEDIATELY)
+let resolvePromise, rejectPromise;
+
+const lockPromise = new Promise((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+});
+
+// ✅ STORE LOCK IMMEDIATELY — NO GAP
+activeAuthPromises.set(code, lockPromise);
+
+try {
+    // ✅ NOW run your main logic safely
+    const tokenRes = await axios.get(
+        'https://graph.facebook.com/v19.0/oauth/access_token',
+        {
             params: {
                 client_id: process.env.APP_ID,
                 client_secret: process.env.APP_SECRET,
                 redirect_uri: process.env.REDIRECT_URI,
                 code,
             }
-        });
-
-        const accessToken = tokenRes.data.access_token;
-        const profileRes = await axios.get('https://facebook.com', {
-            params: { access_token: accessToken, fields: 'id,name,email' }
-        });
-
-        const { id: facebookUserId, name, email } = profileRes.data;
-        console.log(`[EcoFin] 🚀 Main process verified: ${name}`);
-
-        // Handle Database logic
-        const existingUser = await getUserByFacebookId(facebookUserId);
-        let userId;
-
-        if (req.session.loggedIn && req.session.userId) {
-            userId = req.session.userId;
-            await updateUser(userId, { facebook_id: facebookUserId });
-        } else if (existingUser) {
-            userId = existingUser.id;
-            await updateUser(userId, { name, facebook_id: facebookUserId });
-        } else {
-            userId = `fb_${facebookUserId}`;
-            await saveUser(userId, {
-                name,
-                email: email || '',
-                facebook_id: facebookUserId,
-                location: 'Philippines',
-                total_catches: 0,
-                fishing_hours: 0,
-                achievements: 0,
-                success_rate: 0,
-                member_since: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-            });
         }
+    );
 
-        // Fire and forget notifications in the background
-        (async () => {
-            try {
-                const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
-                const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
-                if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
-                    await sendWhatsAppMessage(fbUserData.whatsapp, fbLoginMsg);
-                    await sendWhatsAppMenu(fbUserData.whatsapp);
-                }
-            } catch (err) {
-                console.error('[EcoFin] WhatsApp notify error:', err.message);
+    const accessToken = tokenRes.data.access_token;
+
+    const profileRes = await axios.get(
+        'https://graph.facebook.com/me',
+        {
+            params: {
+                access_token: accessToken,
+                fields: 'id,name,email'
             }
-        })();
-
-        // Return data object so duplicate requests can copy it to their sessions
-        return { userId, name };
-    })();
-
-    // Cache the promise immediately so duplicates catch it
-    activeAuthPromises.set(code, authProcessPromise);
-
-    try {
-        // Execute the main promise for request #1
-        const userData = await authProcessPromise;
-
-        // Set session for request #1
-        req.session.userId = userData.userId;
-        req.session.userName = userData.name;
-        req.session.loggedIn = true;
-
-        console.log(`[EcoFin] ✅ Primary request completed login for: ${userData.name}`);
-
-        // Fix: Force save the session before redirecting to avoid "null" UI race conditions
-        return req.session.save((err) => {
-            if (err) console.error('[EcoFin] ❌ Primary session save failed:', err);
-            res.redirect('/dashboard.html');
-        });
-    } catch (err) {
-        console.error('[EcoFin] ❌ Main OAuth Handler Error:', err.response?.data || err.message);
-        
-        if (err.response?.data?.error?.code === 100) {
-            // Fix: Force save the session even on conditional bypass redirect
-            return req.session.save(() => res.redirect('/dashboard.html'));
         }
-        return res.redirect('/login.html?error=failed');
-    } finally {
-        // Optimization: Instantly wipe from cache when done to clean memory instead of global 30s delay
-        activeAuthPromises.delete(code);
+    );
+
+    const { id: facebookUserId, name, email } = profileRes.data;
+
+    if (!facebookUserId || !name) {
+        throw new Error('Invalid FB data');
     }
+
+    console.log(`[EcoFin] 🚀 Main process verified: ${name}`);
+
+    // ✅ DB logic (unchanged)
+    let userId;
+    const existingUser = await getUserByFacebookId(facebookUserId);
+
+    if (req.session.loggedIn && req.session.userId) {
+        userId = req.session.userId;
+        await updateUser(userId, { facebook_id: facebookUserId });
+    } else if (existingUser) {
+        userId = existingUser.id;
+        await updateUser(userId, { name, facebook_id: facebookUserId });
+    } else {
+        userId = `fb_${facebookUserId}`;
+        await saveUser(userId, {
+            name,
+            email: email || '',
+            facebook_id: facebookUserId,
+            location: 'Philippines',
+            total_catches: 0,
+            fishing_hours: 0,
+            achievements: 0,
+            success_rate: 0,
+            member_since: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        });
+    }
+
+    const result = { userId, name };
+
+    // ✅ RESOLVE ALL WAITING REQUESTS
+    resolvePromise(result);
+
+    // ✅ SET SESSION for request #1
+    req.session.userId = userId;
+    req.session.userName = name;
+    req.session.loggedIn = true;
+
+    console.log(`[EcoFin] ✅ Primary login done: ${name}`);
+
+    return req.session.save(() => res.redirect('/dashboard.html'));
+
+} catch (err) {
+    rejectPromise(err);
+    console.error('[EcoFin] ❌ OAuth Error:', err.message);
+    return res.redirect('/login.html?error=failed');
+
+} finally {
+    activeAuthPromises.delete(code);
+}
 });
 
 
