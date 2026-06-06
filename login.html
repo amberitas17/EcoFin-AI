@@ -84,8 +84,29 @@
             if (e.key === 'Enter') document.getElementById('loginBtn').click();
         });
 
-        document.getElementById('fbLoginBtn').addEventListener('click', function () {
+        /*document.getElementById('fbLoginBtn').addEventListener('click', function () {
             this.disabled = true;
+            window.location.href = '/auth/facebook';
+        });*/
+        let isOAuthRedirecting = false;
+
+        document.getElementById('fbLoginBtn').addEventListener('click', function (e) {
+            // 1. If we are already redirecting, completely kill any subsequent click events
+            if (isOAuthRedirecting) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
+
+            // 2. Lock it down immediately
+            isOAuthRedirecting = true;
+            
+            // 3. Visual feedback (Disabling if it's a button element)
+            this.disabled = true;
+            this.style.opacity = "0.5";
+            this.style.pointerEvents = "none"; 
+
+            // 4. Navigate away
             window.location.href = '/auth/facebook';
         });
 
