@@ -243,45 +243,34 @@ const activeAuthPromises = new Map();
 
 app.get('/auth/messenger/callback', async (req, res) => {
     const code = req.query.code;
-    requestCounter++;
 
-    console.log(`[EcoFin] 🚨 Request #${requestCounter} for code: ${code}`);
+    console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
 
     if (!code) {
-        console.warn('[EcoFin] ⚠️ No code received.');
         return res.redirect('/login.html?error=cancelled');
     }
 
-    // ✅ STEP 1: Handle duplicates immediately
+    // ✅ DUPLICATE HANDLER
     if (activeAuthPromises.has(code)) {
         console.log('[EcoFin] 🛑 Duplicate request waiting...');
 
         try {
-            const sharedUserData = await activeAuthPromises.get(code);
+            const userData = await activeAuthPromises.get(code);
 
-            req.session.userId = sharedUserData.userId;
-            req.session.userName = sharedUserData.name;
+            req.session.userId = userData.userId;
+            req.session.userName = userData.name;
             req.session.loggedIn = true;
 
             return req.session.save(() => res.redirect('/dashboard.html'));
-        } catch (err) {
-            console.error('[EcoFin] ❌ Duplicate failed:', err);
+        } catch {
             return res.redirect('/login.html?error=failed');
         }
     }
 
-    // ✅ STEP 2: LOCK IMMEDIATELY (NO GAP)
-    let resolvePromise, rejectPromise;
+    // ✅ MAIN PROCESS (LOCKED)
+    const authPromise = (async () => {
 
-    const lockPromise = new Promise((resolve, reject) => {
-        resolvePromise = resolve;
-        rejectPromise = reject;
-    });
-
-    activeAuthPromises.set(code, lockPromise);
-
-    try {
-        // ✅ TOKEN REQUEST (FIXED)
+        // 🔐 TOKEN
         const tokenRes = await axios.get(
             'https://graph.facebook.com/v19.0/oauth/access_token',
             {
@@ -301,9 +290,9 @@ app.get('/auth/messenger/callback', async (req, res) => {
             throw new Error('Access token missing');
         }
 
-        console.log('[EcoFin] ✅ ACCESS TOKEN OK');
+        console.log('[EcoFin] ✅ Token OK');
 
-        // ✅ PROFILE REQUEST (FIXED)
+        // 👤 PROFILE
         const profileRes = await axios.get(
             'https://graph.facebook.com/me',
             {
@@ -315,28 +304,31 @@ app.get('/auth/messenger/callback', async (req, res) => {
             }
         );
 
-        console.log('[EcoFin] ✅ FB PROFILE:', profileRes.data);
-
         const { id: facebookUserId, name, email } = profileRes.data;
 
-        // ✅ HARD VALIDATION (PREVENT fb_undefined)
         if (!facebookUserId || !name) {
-            throw new Error('Invalid Facebook profile data');
+            throw new Error('Invalid Facebook profile');
         }
 
-        console.log(`[EcoFin] 🚀 Verified: ${name}`);
+        console.log(`[EcoFin] ✅ FB Login: ${name}`);
 
-        // ✅ DATABASE LOGIC
-        let userId;
+        // 🗄️ DATABASE
         const existingUser = await getUserByFacebookId(facebookUserId);
+        let userId;
 
         if (req.session.loggedIn && req.session.userId) {
+            // linking to existing account
             userId = req.session.userId;
+
             await updateUser(userId, { facebook_id: facebookUserId });
 
         } else if (existingUser) {
             userId = existingUser.id;
-            await updateUser(userId, { name, facebook_id: facebookUserId });
+
+            await updateUser(userId, {
+                name,
+                facebook_id: facebookUserId
+            });
 
         } else {
             userId = `fb_${facebookUserId}`;
@@ -357,36 +349,28 @@ app.get('/auth/messenger/callback', async (req, res) => {
             });
         }
 
-        const result = { userId, name };
+        return { userId, name };
+    })();
 
-        // ✅ RESOLVE waiting requests
-        if (resolvePromise) resolvePromise(result);
+    // ✅ LOCK IMMEDIATELY
+    activeAuthPromises.set(code, authPromise);
 
-        // ✅ SET SESSION
-        req.session.userId = userId;
-        req.session.userName = name;
+    try {
+        const result = await authPromise;
+
+        req.session.userId = result.userId;
+        req.session.userName = result.name;
         req.session.loggedIn = true;
 
-        console.log(`[EcoFin] ✅ Login complete: ${name}`);
+        console.log(`[EcoFin] ✅ Login complete: ${result.name}`);
 
         return req.session.save(() => res.redirect('/dashboard.html'));
 
     } catch (err) {
-        console.error('[EcoFin] ❌ FULL ERROR:', {
-            message: err.message,
-            code: err.code,
-            status: err.response?.status,
-            response: err.response?.data,
-        });
-
-        if (rejectPromise) rejectPromise(err);
-
-        if (!res.headersSent) {
-            return res.redirect('/login.html?error=failed');
-        }
+        console.error('[EcoFin] ❌ OAuth error:', err.message);
+        return res.redirect('/login.html?error=failed');
 
     } finally {
-        // ✅ CLEANUP LOCK
         activeAuthPromises.delete(code);
     }
 });
