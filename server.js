@@ -228,6 +228,9 @@ app.get('/auth/verify', (req, res) => {
 // B. Facebook OAuth — Step 2: Callback
 // ─────────────────────────────────────────────────────────────
 
+// Add a map outside the route to track codes currently being processed
+const processedCodes = new Map();
+
 app.get('/auth/messenger/callback', async (req, res) => {
     const code = req.query.code;
 
@@ -238,6 +241,24 @@ app.get('/auth/messenger/callback', async (req, res) => {
         console.warn('[EcoFin] ⚠️ No code received — user may have cancelled login');
         return res.redirect('/login.html?error=cancelled');
     }
+
+    // ── DEBOUNCE DOUBLE REQUESTS ───────────────────────────
+    if (processedCodes.has(code)) {
+        console.log('[EcoFin] 🛡️ Duplicate code detected. Redirecting user to dashboard.');
+        // If the first request already logged them in, just send them to dashboard
+        if (req.session.loggedIn) {
+            return res.redirect('/dashboard.html');
+        }
+        // If session isn't ready yet, wait a tiny bit or redirect to login to retry safely
+        return res.redirect('/dashboard.html'); 
+    }
+
+    // Mark this code as processing
+    processedCodes.set(code, Date.now());
+    
+    // Clean up the code from memory after 10 seconds
+    setTimeout(() => processedCodes.delete(code), 10000);
+    // ───────────────────────────────────────────────────────
 
     try {
         const tokenRes = await axios.get(
@@ -300,26 +321,28 @@ app.get('/auth/messenger/callback', async (req, res) => {
         req.session.userName = name;
         req.session.loggedIn = true;
 
-        // ── Send login notification to Messenger and/or WhatsApp ──
-        // const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
-        // if (psid) {
-        //     await sendMessengerMessage(psid, fbLoginMsg);
-        //     await sendWelcomeButtons(psid);
-        // }
+        // Ensure session saves before redirecting to prevent race conditions
+        req.session.save((err) => {
+            if (err) console.error('[EcoFin] Session save error:', err);
+            
+            // Move WhatsApp check inside save callback if it relies on immediate state
+            res.redirect('/dashboard.html');
+        });
 
+        // Trigger background tasks after response initiation
+        const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
         const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
         if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
             await sendWhatsAppMessage(fbUserData.whatsapp, fbLoginMsg);
             await sendWhatsAppMenu(fbUserData.whatsapp);
         }
 
-        res.redirect('/dashboard.html');
-
     } catch (err) {
         console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
         res.redirect('/login.html?error=failed');
     }
 });
+
 
 
 // ─────────────────────────────────────────────────────────────
