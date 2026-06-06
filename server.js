@@ -230,11 +230,30 @@ app.get('/auth/verify', (req, res) => {
 
 // Add a map outside the route to track codes currently being processed
 // Keep track of used codes in-memory (or use a Redis store for production)
-const usedAuthCodes = new Set();
+// Global memory pool to block duplicate codes
+const processedCodes = new Set();
 
 app.get('/auth/messenger/callback', async (req, res) => {
   const code = req.query.code;
-  
+
+  // 1. IMMEDIATE SYNCHRONOUS CHECK (Before logs, before any async jumps)
+  if (code) {
+    if (processedCodes.has(code)) {
+      console.warn(`[EcoFin] 🛑 Drop-blocked duplicate parallel request for code: ${code.substring(0, 8)}...`);
+      
+      // If the primary thread already logged them in, send them along cleanly
+      if (req.session?.loggedIn) {
+        return res.redirect('/dashboard.html');
+      }
+      // Otherwise, return early so this duplicate thread completely dies here
+      return; 
+    }
+    // Lock it instantly
+    processedCodes.add(code);
+    // Auto-clean memory in 1 minute
+    setTimeout(() => processedCodes.delete(code), 60000);
+  }
+
   console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
   console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
 
@@ -243,54 +262,55 @@ app.get('/auth/messenger/callback', async (req, res) => {
     return res.redirect('/login.html?error=cancelled');
   }
 
-  // 1. Prevent double-processing the exact same authorization code
-  if (usedAuthCodes.has(code)) {
-    console.warn('[EcoFin] ⚠️ Authorization code already used, ignoring duplicate request');
-    return res.redirect('/dashboard.html'); // Redirect safely if already processed
-  }
-
+  let accessToken;
+  
+  // STEP 1: ISOLATED TOKEN EXCHANGE
   try {
-    // 2. Mark this code as used
-    usedAuthCodes.add(code);
-
     const tokenRes = await axios.get(
-      'https://graph.facebook.com/v19.0/oauth/access_token',
+      'https://facebook.com',
       {
         params: {
           client_id: process.env.APP_ID,
           client_secret: process.env.APP_SECRET,
           redirect_uri: process.env.REDIRECT_URI,
           code,
-        }
+        },
+        timeout: 5000 
       }
     );
+    accessToken = tokenRes.data.access_token;
+  } catch (tokenErr) {
+    const errorDetails = tokenErr.response?.data || tokenErr.message;
+    console.error('[EcoFin] ❌ Step 1: Facebook Token Exchange Failed:', errorDetails);
+    
+    // Fallback security check
+    if (JSON.stringify(errorDetails).includes('This authorization code has been used')) {
+      if (req.session?.loggedIn) {
+        return res.redirect('/dashboard.html');
+      }
+    }
+    return res.redirect('/login.html?error=oauth_failed');
+  }
 
-    const accessToken = tokenRes.data.access_token;
-
-    const profileRes = await axios.get('https://graph.facebook.com/me', {
+  // STEP 2: PROFILE AND DATABASE OPERATIONS
+  try {
+    const profileRes = await axios.get('https://facebook.com', {
       params: { access_token: accessToken, fields: 'id,name,email' }
     });
 
     const { id: facebookUserId, name, email } = profileRes.data;
     console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookUserId})`);
 
-    // ── Retrieve PSID using user's access token ───────────
     const existingUser = await getUserByFacebookId(facebookUserId);
     let userId;
 
-    // If already logged in (email user connecting Messenger)
     if (req.session.loggedIn && req.session.userId) {
       userId = req.session.userId;
-      await updateUser(userId, {
-        facebook_id: facebookUserId,
-      });
+      await updateUser(userId, { facebook_id: facebookUserId });
       console.log(`[EcoFin] ✅ Messenger linked to existing user: ${userId}`);
     } else if (existingUser) {
       userId = existingUser.id;
-      await updateUser(userId, {
-        name,
-        facebook_id: facebookUserId,
-      });
+      await updateUser(userId, { name, facebook_id: facebookUserId });
       console.log(`[EcoFin] ✅ Existing Facebook user updated: ${userId}`);
     } else {
       userId = `fb_${facebookUserId}`;
@@ -308,10 +328,12 @@ app.get('/auth/messenger/callback', async (req, res) => {
       console.log(`[EcoFin] ✅ New Facebook user created: ${userId}`);
     }
 
+    // Save session
     req.session.userId = userId;
     req.session.userName = name;
     req.session.loggedIn = true;
 
+    // Send alerts if setup
     const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
     const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
     if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
@@ -319,12 +341,14 @@ app.get('/auth/messenger/callback', async (req, res) => {
       await sendWhatsAppMenu(fbUserData.whatsapp);
     }
 
-    res.redirect('/dashboard.html');
-  } catch (err) {
-    console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
-    res.redirect('/login.html?error=failed');
+    return res.redirect('/dashboard.html');
+
+  } catch (dbErr) {
+    console.error('[EcoFin] ❌ Step 2: Database Operation Failed:', dbErr.message);
+    return res.redirect('/login.html?error=server_error');
   }
 });
+
 
 
 
