@@ -235,69 +235,73 @@ app.get('/auth/verify', (req, res) => {
 // Key: auth_code, Value: 'processing' | 'done'
 // Global memory map to track the status of code processing
 // Keep track of recently used codes to prevent duplicates
-const usedCodes = new Set();
+
 let requestCounter = 0;
+
+// Global cache that stores the ongoing login promise for each code
+const activeAuthPromises = new Map();
 
 app.get('/auth/messenger/callback', async (req, res) => {
     const code = req.query.code;
-     requestCounter++;
+    requestCounter++;
     console.log(`[EcoFin] 🚨 Internal Request Hit Count: #${requestCounter} for code: ${req.query.code}`);
-    console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
-    console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
 
-    // 1. Safety Check: If no code, user likely cancelled
     if (!code) {
-        console.warn('[EcoFin] ⚠️ No code received — user may have cancelled login');
+        console.warn('[EcoFin] ⚠️ No code received.');
         return res.redirect('/login.html?error=cancelled');
     }
 
-    // 2. Safety Check: Prevent race conditions or accidental double-requests
-    if (usedCodes.has(code)) {
-        console.warn('[EcoFin] ⚠️ Authorization code already processed. Redirecting to dashboard.');
-        return res.redirect('/dashboard.html');
+    // ─── CRITICAL STEP: JOIN ONGOING PROMISE ────────────────────────────
+    // If request #2 or #3 hits, they stop right here and wait for request #1 to finish.
+    if (activeAuthPromises.has(code)) {
+        console.log('[EcoFin] 🛑 Request duplicated. Waiting for the main process to complete...');
+        try {
+            // Wait for request #1 to finish downloading everything from FB & saving to DB
+            const sharedUserData = await activeAuthPromises.get(code);
+            
+            // Apply the logged-in session data to this specific request's browser session
+            req.session.userId = sharedUserData.userId;
+            req.session.userName = sharedUserData.name;
+            req.session.loggedIn = true;
+
+            console.log(`[EcoFin] 🧠 Duplicate request safely attached to session for: ${sharedUserData.name}`);
+            return res.redirect('/dashboard.html');
+        } catch (sharedError) {
+            return res.redirect('/login.html?error=failed');
+        }
     }
 
-    try {
-        // Exchange authorization code for access token
-        const tokenRes = await axios.get(
-            'https://graph.facebook.com/v19.0/oauth/access_token',
-            {
-                params: {
-                    client_id: process.env.APP_ID,
-                    client_secret: process.env.APP_SECRET,
-                    redirect_uri: process.env.REDIRECT_URI,
-                    code,
-                }
+    // ─── RUN THE MAIN ACTION (REQUEST #1) ───────────────────────────────
+    // Create an asynchronous execution block that request #2 and #3 can listen to
+    const authProcessPromise = (async () => {
+        // Exchange code for token
+        const tokenRes = await axios.get('https://facebook.com', {
+            params: {
+                client_id: process.env.APP_ID,
+                client_secret: process.env.APP_SECRET,
+                redirect_uri: process.env.REDIRECT_URI,
+                code,
             }
-        );
-
-        // Mark code as used so subsequent identical requests will bypass the API
-        usedCodes.add(code); 
-        
-        // Cleanup memory: Delete code from set after 5 minutes
-        setTimeout(() => usedCodes.delete(code), 300000);
+        });
 
         const accessToken = tokenRes.data.access_token;
-        const profileRes = await axios.get('https://graph.facebook.com/me', {
+        const profileRes = await axios.get('https://facebook.com', {
             params: { access_token: accessToken, fields: 'id,name,email' }
         });
 
         const { id: facebookUserId, name, email } = profileRes.data;
-        console.log(`[EcoFin] ✅ Facebook login: ${name} (${facebookUserId})`);
+        console.log(`[EcoFin] 🚀 Main process verified: ${name}`);
 
-        // Retrieve PSID using user's access token
+        // Handle Database logic
         const existingUser = await getUserByFacebookId(facebookUserId);
         let userId;
 
-        // If already logged in (email user connecting Messenger)
         if (req.session.loggedIn && req.session.userId) {
             userId = req.session.userId;
             await updateUser(userId, { facebook_id: facebookUserId });
-            console.log(`[EcoFin] ✅ Messenger linked to existing user: ${userId}`);
         } else if (existingUser) {
             userId = existingUser.id;
             await updateUser(userId, { name, facebook_id: facebookUserId });
-            console.log(`[EcoFin] ✅ Existing Facebook user updated: ${userId}`);
         } else {
             userId = `fb_${facebookUserId}`;
             await saveUser(userId, {
@@ -311,32 +315,49 @@ app.get('/auth/messenger/callback', async (req, res) => {
                 success_rate: 0,
                 member_since: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
             });
-            console.log(`[EcoFin] ✅ New Facebook user created: ${userId}`);
         }
 
-        req.session.userId = userId;
-        req.session.userName = name;
+        // Fire and forget notifications in the background
+        (async () => {
+            try {
+                const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
+                const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
+                if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
+                    await sendWhatsAppMessage(fbUserData.whatsapp, fbLoginMsg);
+                    await sendWhatsAppMenu(fbUserData.whatsapp);
+                }
+            } catch (err) {
+                console.error('[EcoFin] WhatsApp notify error:', err.message);
+            }
+        })();
+
+        // Return data object so duplicate requests can copy it to their sessions
+        return { userId, name };
+    })();
+
+    // Cache the promise immediately so duplicates catch it
+    activeAuthPromises.set(code, authProcessPromise);
+
+    // Clean up memory after 30 seconds
+    setTimeout(() => activeAuthPromises.delete(code), 30000);
+
+    try {
+        // Execute the main promise for request #1
+        const userData = await authProcessPromise;
+
+        // Set session for request #1
+        req.session.userId = userData.userId;
+        req.session.userName = userData.name;
         req.session.loggedIn = true;
 
-        const { data: fbUserData } = await supabase.from('users').select('*').eq('id', userId).single();
-        
-        const fbLoginMsg = `👋 Hi ${name}! You've just logged in to EcoFin AI.`;
-        if (fbUserData?.whatsapp && fbUserData?.whatsapp_connected) {
-            await sendWhatsAppMessage(fbUserData.whatsapp, fbLoginMsg);
-            await sendWhatsAppMenu(fbUserData.whatsapp);
-        }
-
-        res.redirect('/dashboard.html');
-
+        return res.redirect('/dashboard.html');
     } catch (err) {
-        console.error('[EcoFin] ❌ Facebook OAuth failed:', err.response?.data || err.message);
+        console.error('[EcoFin] ❌ Main OAuth Handler Error:', err.response?.data || err.message);
         
-        // If the code was already used, just redirect to the dashboard
-        if (err.response?.data?.error?.code === 100 && err.response?.data?.error?.error_subcode === 36009) {
+        if (err.response?.data?.error?.code === 100) {
             return res.redirect('/dashboard.html');
         }
-
-        res.redirect('/login.html?error=failed');
+        return res.redirect('/login.html?error=failed');
     }
 });
 
