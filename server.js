@@ -83,15 +83,14 @@ app.get('/auth/facebook', (req, res) => {
 });
 
 app.get('/auth/callback', async (req, res) => {
-    // 1. Correctly extract the string code
     const code = req.query.code;
 
     console.log('[EcoFin] Callback REDIRECT_URI:', process.env.REDIRECT_URI);
     console.log('[EcoFin] Code received:', code ? 'YES' : 'NO');
 
-    // if (!code) {
-    //     return res.redirect('/login.html?error=no_code');
-    // }
+    if (!code) {
+        return res.redirect('/login.html?error=no_code');
+    }
 
     try {
         const tokenRes = await axios.get('https://graph.facebook.com/v19.0/oauth/access_token', {
@@ -112,21 +111,20 @@ app.get('/auth/callback', async (req, res) => {
         });
         const { id: facebookUserId, name, email } = userRes.data;
 
-
         console.log(`[EcoFin] ✅ Facebook OAuth successful for ${name} (${facebookUserId})`);
         
-        // 2. Fix variable scope and pass correct FB ID variable
-        let userId;
+        let user;
         const existingUser = await getUserByFacebookId(facebookUserId); 
         
         if (!existingUser) {
-            const userId = `fb_${fbUser.id}`;
+            // FIXED: Using facebookUserId variable consistently
+            const generatedUserId = `fb_${facebookUserId}`; 
             try {
-                console.log(`[EcoFin] 🔄 Attempting to create user profile for Facebook user: ${userId}`);
+                console.log(`[EcoFin] 🔄 Attempting to create user profile for Facebook user: ${generatedUserId}`);
                 const newProfile = {
-                    name: fbUser.name,
-                    email: fbUser.email || '',
-                    facebook_id: fbUser.id,
+                    name: name, // FIXED: fbUser was undefined, changed to destructured name
+                    email: email || '', // FIXED: fbUser was undefined, changed to destructured email
+                    facebook_id: facebookUserId,
                     location: 'Philippines',
                     total_catches: 0,
                     fishing_hours: 0,
@@ -139,11 +137,10 @@ app.get('/auth/callback', async (req, res) => {
                     whatsapp_connected: false,
                 };
                 
-                await saveUser(userId, newProfile);
-                console.log(`[EcoFin] ✅ Created user profile for Facebook user: ${userId}`);
+                await saveUser(generatedUserId, newProfile);
+                console.log(`[EcoFin] ✅ Created user profile for Facebook user: ${generatedUserId}`);
                 
-                // Directly construct the user object to avoid an immediate extra DB lookup
-                user = { id: userId, ...newProfile };
+                user = { id: generatedUserId, ...newProfile };
             }
             catch (dbErr) {
                 console.error('[EcoFin] ❌ Failed to create user profile for Facebook user:', dbErr.message);
@@ -151,15 +148,15 @@ app.get('/auth/callback', async (req, res) => {
             }
         } else if (existingUser && !existingUser.facebook_id) {
             console.log(`[EcoFin] 🔄 Linking Facebook ID to existing user: ${existingUser.id}`);
-            await updateUser(existingUser.id, { facebook_id: fbUser.id });
+            await updateUser(existingUser.id, { facebook_id: facebookUserId });
             
-            // Update local object reference
-            existingUser.facebook_id = fbUser.id;
+            existingUser.facebook_id = facebookUserId;
             user = existingUser;
         } else {
             user = existingUser;
         }
 
+        // Establish the user session
         req.session.userId   = user.id;
         req.session.userName = user.name;
         req.session.loggedIn = true;
@@ -170,12 +167,24 @@ app.get('/auth/callback', async (req, res) => {
             await sendWhatsAppMenu(fbUserData.whatsapp);
         }
 
-        res.redirect('/dashboard.html');
+        return res.redirect('/dashboard.html');
 
     }
     catch (err) {
+        const errorData = err.response?.data?.error || {};
+        
+        // Safety Net: If this is a duplicate request code error, but the user session 
+        // was already successfully established by the twin request, let them pass!
+        if (errorData.code === 100 && errorData.error_subcode === 36009) {
+            console.log('[EcoFin] ⚠️ Duplicate OAuth request intercepted. Code already used.');
+            if (req.session && req.session.loggedIn) {
+                console.log('[EcoFin] ↩️ Active session found. Redirecting user straight to dashboard.');
+                return res.redirect('/dashboard.html');
+            }
+        }
+
         console.log('[EcoFin] ❌ Facebook OAuth error:', err.response?.data || err.message);
-        res.redirect('/login.html?error=oauth_failed');
+        return res.redirect('/login.html?error=oauth_failed');
     }
 });
 
