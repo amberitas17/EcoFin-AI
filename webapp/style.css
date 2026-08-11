@@ -1,0 +1,367 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', 'Quicksand', sans-serif;
+}
+
+html, body {
+    background: #e2f0e1;
+    color: #1a1a1a;
+    min-height: 100vh;
+}
+
+/* ── Top bar ─────────────────────────────────────────── */
+.topbar {
+    background: linear-gradient(135deg, #1f4d2e, #2E7D32);
+    color: white;
+    padding: 28px 24px 22px;
+    text-align: center;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.brand-icon {
+    font-size: 28px;
+}
+
+.brand h1 {
+    font-size: 22px;
+    font-weight: 700;
+}
+
+.brand h1 small {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    opacity: 0.85;
+    letter-spacing: 0.5px;
+}
+
+.tagline {
+    margin-top: 6px;
+    font-size: 13px;
+    opacity: 0.9;
+}
+
+/* ── Layout ──────────────────────────────────────────── */
+.wrap {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 22px 18px 40px;
+}
+
+/* ── Visitor identity (webapp_users) ─────────────────── */
+.identity-card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 18px;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+}
+
+.identity-label {
+    font-size: 13px;
+    color: #444;
+    margin-bottom: 10px;
+}
+
+.identity-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.identity-tabs button {
+    flex: 1;
+    padding: 9px 0;
+    border: 1px solid #d8e6d8;
+    border-radius: 8px;
+    background: #f3faf3;
+    color: #1f4d2e;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.identity-tabs button.active {
+    background: #2E7D32;
+    border-color: #2E7D32;
+    color: white;
+}
+
+.identity-error {
+    color: #c0392b;
+    font-size: 12.5px;
+    margin-top: 8px;
+}
+
+.identity-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.identity-fields input {
+    flex: 1 1 200px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #d8e6d8;
+    font-size: 13px;
+}
+
+.identity-fields button {
+    padding: 10px 18px;
+    border: none;
+    border-radius: 8px;
+    background: #2E7D32;
+    color: white;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.identity-fields button:hover {
+    background: #1f4d2e;
+}
+
+.identity-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: #eaf5ea;
+    border: 1px solid #cfe6cf;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 18px;
+    font-size: 13px;
+    color: #1f4d2e;
+}
+
+.identity-banner button {
+    background: none;
+    border: none;
+    color: #2E7D32;
+    font-weight: 600;
+    font-size: 12px;
+    text-decoration: underline;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+/* ── Weather ─────────────────────────────────────────── */
+.weather-card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 18px;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+}
+
+.weather-card h3 {
+    font-size: 15px;
+    color: #1f4d2e;
+    margin-bottom: 6px;
+}
+
+.weather-location {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 10px;
+}
+
+.weather-loading {
+    color: #999;
+    font-size: 13px;
+    font-style: italic;
+}
+
+.weather-main-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.weather-temp {
+    font-size: 30px;
+    font-weight: 700;
+    color: #2E7D32;
+}
+
+.weather-desc {
+    font-size: 14px;
+    color: #555;
+}
+
+.weather-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    font-size: 13px;
+    color: #444;
+}
+
+.weather-details div {
+    background: #f1f8f1;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+.weather-error {
+    color: #c0392b;
+    font-size: 13px;
+}
+
+/* ── Stats ───────────────────────────────────────────── */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 22px;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px 12px;
+    text-align: center;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+}
+
+.stat-value {
+    display: block;
+    font-size: 22px;
+    font-weight: 700;
+    color: #1f4d2e;
+    margin-bottom: 4px;
+    word-break: break-word;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: #777;
+    letter-spacing: 0.3px;
+}
+
+/* ── Controls ────────────────────────────────────────── */
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.search-box {
+    flex: 1 1 240px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: white;
+    border: 1px solid #d8e6d8;
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.search-box input {
+    border: none;
+    outline: none;
+    font-size: 14px;
+    width: 100%;
+    background: transparent;
+}
+
+#sortSelect {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #d8e6d8;
+    background: white;
+    font-size: 13px;
+    color: #333;
+}
+
+.export-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.export-buttons button {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #2E7D32;
+    color: white;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.export-buttons button:hover {
+    background: #1f4d2e;
+}
+
+.export-buttons button:disabled {
+    background: #a9c4a9;
+    cursor: not-allowed;
+}
+
+/* ── Table ───────────────────────────────────────────── */
+.table-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+    overflow: hidden;
+}
+
+.table-scroll {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 720px;
+}
+
+thead th {
+    background: #1f4d2e;
+    color: white;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 12px 14px;
+    text-align: left;
+    white-space: nowrap;
+}
+
+tbody td {
+    padding: 12px 14px;
+    font-size: 13.5px;
+    border-bottom: 1px solid #eef2ee;
+    white-space: nowrap;
+}
+
+tbody tr:hover {
+    background: #f3faf3;
+}
+
+.empty-row {
+    text-align: center;
+    color: #999;
+    padding: 30px 0 !important;
+    white-space: normal !important;
+}
+
+.footnote {
+    text-align: center;
+    margin-top: 18px;
+    font-size: 12px;
+    color: #7a8a7a;
+}

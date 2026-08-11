@@ -58,6 +58,46 @@ async function getCatchesByUser(userId) {
     return data;
 }
 
+// ─── Save a webapp-only user (separate from the chatbot `users` table) ──
+async function saveWebappUser(id, data) {
+    const { error } = await supabase
+        .from('webapp_users')
+        .upsert({ id, ...data }, { onConflict: 'id' });
+    if (error) throw new Error(error.message);
+}
+
+// ─── Get a webapp-only user by id ─────────────────────────────
+async function getWebappUserById(id) {
+    const { data, error } = await supabase
+        .from('webapp_users')
+        .select('*')
+        .eq('id', id)
+        .single();
+    if (error || !data) return null;
+    return data;
+}
+
+// ─── Get a webapp-only user by email ──────────────────────────
+async function getWebappUserByEmail(email) {
+    const { data, error } = await supabase
+        .from('webapp_users')
+        .select('*')
+        .eq('email', email)
+        .single();
+    if (error || !data) return null;
+    return data;
+}
+
+// ─── Get all catches across all accounts (joined with user info) ──
+async function getAllCatches() {
+    const { data, error } = await supabase
+        .from('catches')
+        .select('*, users ( id, name, location, member_since )')
+        .order('created_at', { ascending: false });
+    if (error || !data) return [];
+    return data;
+}
+
 // ─── Get a user by Facebook ID ───────────────────────────────
 async function getUserByFacebookId(facebookId) {
     const { data, error } = await supabase
@@ -184,6 +224,10 @@ module.exports = {
     getUserByWhatsApp,
     getUserByFacebookId,
     getCatchesByUser,
+    getAllCatches,
+    saveWebappUser,
+    getWebappUserById,
+    getWebappUserByEmail,
     updateUser,
     saveCatch,
     countCatches,

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EcoFin AI — Catch Showcase</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-icon">🐟</span>
+            <h1>EcoFin AI <small>Catch Showcase</small></h1>
+        </div>
+        <p class="tagline">Live catch data logged by every EcoFin account</p>
+    </header>
+
+    <main class="wrap">
+
+        <!-- Webapp visitor identity (separate from the chatbot's users table) -->
+        <section class="identity-card" id="identityForm">
+            <div class="identity-tabs">
+                <button type="button" class="identity-tab active" id="tabLogin" data-mode="login">Log In</button>
+                <button type="button" class="identity-tab" id="tabSignup" data-mode="signup">Sign Up</button>
+            </div>
+            <p class="identity-label">Sign in with your email so we can show catches near you:</p>
+            <div class="identity-fields">
+                <input type="text" id="identityName" placeholder="Full name" hidden>
+                <input type="email" id="identityEmail" placeholder="Email address">
+                <input type="password" id="identityPassword" placeholder="Password">
+                <input type="text" id="identityLocation" placeholder="Your location (e.g. Bulacan, Philippines)" hidden>
+                <button id="identitySubmit">Log In</button>
+            </div>
+            <p class="identity-error" id="identityError" hidden></p>
+        </section>
+
+        <section class="identity-banner" id="identityBanner" hidden>
+            <span id="identityBannerText"></span>
+            <button id="identityChange">Not you? Change</button>
+        </section>
+
+        <!-- Weather — same real-time forecast shown on the mobile dashboard -->
+        <section class="weather-card" id="weatherCard">
+            <h3>🌤 Weather Forecast</h3>
+            <p class="weather-location" id="weatherLocation">📍 Detecting location…</p>
+            <div id="weatherContent">
+                <p class="weather-loading">Loading weather data…</p>
+            </div>
+        </section>
+
+        <!-- Summary stats -->
+        <section class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <span class="stat-value" id="statTotalCatches">--</span>
+                <span class="stat-label">Total Catches</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statTotalAccounts">--</span>
+                <span class="stat-label">Accounts</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statTopSpecies">--</span>
+                <span class="stat-label">Top Species</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="statTopLocation">--</span>
+                <span class="stat-label">Top Location</span>
+            </div>
+        </section>
+
+        <!-- Controls -->
+        <section class="controls">
+            <div class="search-box">
+                <span>🔍</span>
+                <input type="text" id="searchInput" placeholder="Search by fish, angler, or location...">
+            </div>
+            <select id="locationSelect">
+                <option value="">All Locations</option>
+            </select>
+            <select id="sortSelect">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="heaviest">Heaviest first</option>
+            </select>
+            <div class="export-buttons">
+                <button id="exportCsvBtn" type="button" disabled>⬇ CSV</button>
+                <button id="exportPdfBtn" type="button" disabled>⬇ PDF</button>
+            </div>
+        </section>
+
+        <!-- Catch table -->
+        <section class="table-card">
+            <div class="table-scroll">
+                <table id="catchTable">
+                    <thead>
+                        <tr>
+                            <th>Angler</th>
+                            <th>Account Location</th>
+                            <th>Species</th>
+                            <th>Weight</th>
+                            <th>Size</th>
+                            <th>Source</th>
+                            <th>Catch Location</th>
+                            <th>Depth</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="catchTableBody">
+                        <tr><td colspan="9" class="empty-row">Loading catch data…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <p class="footnote">EcoFin AI · Read-only public showcase of community catch data</p>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

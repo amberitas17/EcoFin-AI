@@ -4,12 +4,17 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const session = require('express-session');
+const bcrypt = require('bcryptjs');
 
 const webhookRoute = require('./src/routes/webhook');
 const {
     saveUser,
     getUserByFacebookId,
     getCatchesByUser,
+    getAllCatches,
+    saveWebappUser,
+    getWebappUserById,
+    getWebappUserByEmail,
     updateUser,
     saveCatch,
     countCatches,
@@ -22,6 +27,12 @@ const app = express();
 
 app.use(bodyParser.json());
 app.use(express.static(__dirname));
+
+// ─── Web App (catch showcase) static site ─────────────────────
+app.use('/webapp', express.static(__dirname + '/webapp'));
+app.get('/webapp', (req, res) => {
+    res.sendFile(__dirname + '/webapp/index.html');
+});
 
 // ─── Session Middleware ───────────────────────────────────────
 app.use(session({
@@ -874,6 +885,83 @@ app.get('/api/catches/:userId', async (req, res) => {
     try {
         const catches = await getCatchesByUser(req.params.userId);
         res.json(catches);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// H2. Get Catch Data for ALL Accounts (used by the /webapp showcase)
+// ─────────────────────────────────────────────────────────────
+
+app.get('/api/all-catches', async (req, res) => {
+    try {
+        const catches = await getAllCatches();
+        res.json(catches);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// H3. Webapp-only Users (separate table, email/password sign up & login
+//     used to remember a visitor's identity across sessions)
+// ─────────────────────────────────────────────────────────────
+
+app.post('/api/webapp-auth/signup', async (req, res) => {
+    try {
+        const { name, email, password, location } = req.body;
+        if (!name || !email || !password || !location) {
+            return res.status(400).json({ error: 'Name, email, password and location are required' });
+        }
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const existing = await getWebappUserByEmail(normalizedEmail);
+        if (existing) {
+            return res.status(400).json({ error: 'An account with this email already exists.' });
+        }
+
+        const passwordHash = await bcrypt.hash(password, 10);
+        const id = `webuser_${Date.now()}`;
+        await saveWebappUser(id, { name, email: normalizedEmail, password_hash: passwordHash, location });
+
+        res.json({ id, name, email: normalizedEmail, location });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/webapp-auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const user = await getWebappUserByEmail(normalizedEmail);
+        const match = user && (await bcrypt.compare(password, user.password_hash));
+        if (!match) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        res.json({ id: user.id, name: user.name, email: user.email, location: user.location });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/webapp-users/:id', async (req, res) => {
+    try {
+        const user = await getWebappUserById(req.params.id);
+        if (!user) return res.status(404).json({ error: 'Not found' });
+        const { password_hash, ...safeUser } = user;
+        res.json(safeUser);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
