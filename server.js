@@ -15,6 +15,7 @@ const {
     saveWebappUser,
     getWebappUserById,
     getWebappUserByEmail,
+    updateWebappUserPassword,
     updateUser,
     saveCatch,
     countCatches,
@@ -962,6 +963,31 @@ app.get('/api/webapp-users/:id', async (req, res) => {
         if (!user) return res.status(404).json({ error: 'Not found' });
         const { password_hash, ...safeUser } = user;
         res.json(safeUser);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/webapp-auth/forgot-password', async (req, res) => {
+    try {
+        const { email, newPassword } = req.body;
+        if (!email || !newPassword) {
+            return res.status(400).json({ error: 'Email and new password are required' });
+        }
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const user = await getWebappUserByEmail(normalizedEmail);
+        if (!user) {
+            return res.status(404).json({ error: 'No account found with this email.' });
+        }
+
+        const passwordHash = await bcrypt.hash(newPassword, 10);
+        await updateWebappUserPassword(normalizedEmail, passwordHash);
+
+        res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

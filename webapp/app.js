@@ -15,6 +15,7 @@
     ];
     let allCatches = [];
     let currentCatches = [];
+    let aggregateTopLocation = '--';
 
     function escapeHtml(str) {
         return String(str ?? '--').replace(/[&<>"']/g, (c) => ({
@@ -63,6 +64,7 @@
                     signedOut = false;
                     showIdentityBanner(user);
                     applyLocationFilter(user.location);
+                    setTopLocationDisplay(extractRegion(user.location));
                     return;
                 }
             } catch {
@@ -82,25 +84,42 @@
     }
 
     function showIdentityError(message) {
+        document.getElementById('identitySuccess').hidden = true;
         const error = document.getElementById('identityError');
         error.textContent = message;
         error.hidden = false;
+    }
+
+    function showIdentitySuccess(message) {
+        document.getElementById('identityError').hidden = true;
+        const success = document.getElementById('identitySuccess');
+        success.textContent = message;
+        success.hidden = false;
     }
 
     function isValidEmail(email) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
     }
 
-    // Switches the identity form between Log In and Sign Up, toggling the
-    // name/location fields that only apply when creating a new account.
+    // Switches the identity form between Log In, Sign Up and Forgot Password, toggling
+    // the name/location/confirm-password fields that only apply to certain modes.
     function setIdentityMode(mode) {
         identityMode = mode;
         document.getElementById('identityError').hidden = true;
+        document.getElementById('identitySuccess').hidden = true;
+        document.getElementById('identityTabs').hidden = mode === 'forgot';
         document.getElementById('tabLogin').classList.toggle('active', mode === 'login');
         document.getElementById('tabSignup').classList.toggle('active', mode === 'signup');
         document.getElementById('identityName').hidden = mode !== 'signup';
         document.getElementById('identityLocation').hidden = mode !== 'signup';
-        document.getElementById('identitySubmit').textContent = mode === 'signup' ? 'Sign Up' : 'Log In';
+        document.getElementById('identityConfirmPassword').hidden = mode !== 'forgot';
+        document.getElementById('identityPassword').placeholder = mode === 'forgot' ? 'New password' : 'Password';
+        document.getElementById('identityLabel').textContent = mode === 'forgot'
+            ? 'Enter your account email and a new password:'
+            : 'Sign in with your email so we can show catches near you:';
+        document.getElementById('identityForgotLink').textContent = mode === 'forgot' ? 'Back to Log In' : 'Forgot password?';
+        document.getElementById('identitySubmit').textContent =
+            mode === 'signup' ? 'Sign Up' : mode === 'forgot' ? 'Reset Password' : 'Log In';
     }
 
     function showIdentityBanner(user) {
@@ -124,6 +143,8 @@
     }
 
     async function handleIdentitySubmit() {
+        if (identityMode === 'forgot') return handleForgotPassword();
+
         const name = document.getElementById('identityName').value.trim();
         const email = document.getElementById('identityEmail').value.trim();
         const password = document.getElementById('identityPassword').value;
@@ -166,6 +187,52 @@
             signedOut = false;
             showIdentityBanner(data);
             applyLocationFilter(data.location);
+            setTopLocationDisplay(extractRegion(data.location));
+        } catch {
+            showIdentityError('Could not reach the server. Please try again.');
+        } finally {
+            submitBtn.disabled = false;
+        }
+    }
+
+    // Resets a webapp_users account's password_hash via email, no old password required
+    async function handleForgotPassword() {
+        const email = document.getElementById('identityEmail').value.trim();
+        const newPassword = document.getElementById('identityPassword').value;
+        const confirmPassword = document.getElementById('identityConfirmPassword').value;
+
+        if (!email || !isValidEmail(email)) {
+            showIdentityError('Please enter a valid email address.');
+            return;
+        }
+        if (!newPassword || newPassword.length < 6) {
+            showIdentityError('New password must be at least 6 characters.');
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            showIdentityError('Passwords do not match.');
+            return;
+        }
+
+        const submitBtn = document.getElementById('identitySubmit');
+        submitBtn.disabled = true;
+
+        try {
+            const res = await fetch('/api/webapp-auth/forgot-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, newPassword })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                showIdentityError(data.error || 'Something went wrong. Please try again.');
+                return;
+            }
+
+            document.getElementById('identityPassword').value = '';
+            document.getElementById('identityConfirmPassword').value = '';
+            setIdentityMode('login');
+            showIdentitySuccess('Password updated. You can now log in.');
         } catch {
             showIdentityError('Could not reach the server. Please try again.');
         } finally {
@@ -178,13 +245,16 @@
         document.getElementById('identityName').value = '';
         document.getElementById('identityEmail').value = '';
         document.getElementById('identityPassword').value = '';
+        document.getElementById('identityConfirmPassword').value = '';
         document.getElementById('identityLocation').value = '';
         document.getElementById('identityError').hidden = true;
+        document.getElementById('identitySuccess').hidden = true;
         clearLocationOptions();
         document.getElementById('locationSelect').value = '';
         setIdentityMode('login');
         showIdentityForm();
         signedOut = true;
+        setTopLocationDisplay(aggregateTopLocation);
         applyFilters();
     }
 
@@ -196,16 +266,23 @@
         const locationCount = {};
         catches.forEach((c) => {
             if (c.fish) speciesCount[c.fish] = (speciesCount[c.fish] || 0) + 1;
-            if (c.location) locationCount[c.location] = (locationCount[c.location] || 0) + 1;
+            // Tally by the angler's registered account location, not the catch location
+            const accountLocation = c.users?.location;
+            if (accountLocation) locationCount[accountLocation] = (locationCount[accountLocation] || 0) + 1;
         });
 
         const topSpecies = Object.entries(speciesCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '--';
-        const topLocation = Object.entries(locationCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '--';
+        aggregateTopLocation = Object.entries(locationCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '--';
 
         document.getElementById('statTotalCatches').textContent = totalCatches;
         document.getElementById('statTotalAccounts').textContent = accountIds.size;
         document.getElementById('statTopSpecies').textContent = topSpecies;
-        document.getElementById('statTopLocation').textContent = topLocation;
+        setTopLocationDisplay(aggregateTopLocation);
+    }
+
+    // Shows the signed-in user's own registered region instead of the site-wide aggregate
+    function setTopLocationDisplay(text) {
+        document.getElementById('statTopLocation').textContent = text || '--';
     }
 
     function sortCatches(catches, mode) {
@@ -439,6 +516,7 @@
     document.getElementById('identityChange').addEventListener('click', handleIdentityChange);
     document.getElementById('tabLogin').addEventListener('click', () => setIdentityMode('login'));
     document.getElementById('tabSignup').addEventListener('click', () => setIdentityMode('signup'));
+    document.getElementById('identityForgotLink').addEventListener('click', () => setIdentityMode(identityMode === 'forgot' ? 'login' : 'forgot'));
     document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
     document.getElementById('exportPdfBtn').addEventListener('click', exportPdf);
 

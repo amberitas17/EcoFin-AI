@@ -88,6 +88,15 @@ async function getWebappUserByEmail(email) {
     return data;
 }
 
+// ─── Update a webapp-only user's password hash ────────────────
+async function updateWebappUserPassword(email, passwordHash) {
+    const { error } = await supabase
+        .from('webapp_users')
+        .update({ password_hash: passwordHash })
+        .eq('email', email);
+    if (error) throw new Error(error.message);
+}
+
 // ─── Get all catches across all accounts (joined with user info) ──
 async function getAllCatches() {
     const { data, error } = await supabase
@@ -228,6 +237,7 @@ module.exports = {
     saveWebappUser,
     getWebappUserById,
     getWebappUserByEmail,
+    updateWebappUserPassword,
     updateUser,
     saveCatch,
     countCatches,

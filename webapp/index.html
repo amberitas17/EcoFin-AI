@@ -20,18 +20,21 @@
 
         <!-- Webapp visitor identity (separate from the chatbot's users table) -->
         <section class="identity-card" id="identityForm">
-            <div class="identity-tabs">
+            <div class="identity-tabs" id="identityTabs">
                 <button type="button" class="identity-tab active" id="tabLogin" data-mode="login">Log In</button>
                 <button type="button" class="identity-tab" id="tabSignup" data-mode="signup">Sign Up</button>
             </div>
-            <p class="identity-label">Sign in with your email so we can show catches near you:</p>
+            <p class="identity-label" id="identityLabel">Sign in with your email so we can show catches near you:</p>
             <div class="identity-fields">
                 <input type="text" id="identityName" placeholder="Full name" hidden>
                 <input type="email" id="identityEmail" placeholder="Email address">
                 <input type="password" id="identityPassword" placeholder="Password">
+                <input type="password" id="identityConfirmPassword" placeholder="Confirm new password" hidden>
                 <input type="text" id="identityLocation" placeholder="Your location (e.g. Bulacan, Philippines)" hidden>
                 <button id="identitySubmit">Log In</button>
             </div>
+            <button type="button" class="identity-forgot-link" id="identityForgotLink">Forgot password?</button>
+            <p class="identity-success" id="identitySuccess" hidden></p>
             <p class="identity-error" id="identityError" hidden></p>
         </section>
 
