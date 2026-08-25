@@ -15,7 +15,6 @@
     ];
     let allCatches = [];
     let currentCatches = [];
-    let aggregateTopLocation = '--';
 
     function escapeHtml(str) {
         return String(str ?? '--').replace(/[&<>"']/g, (c) => ({
@@ -34,7 +33,6 @@
             document.getElementById('catchTableBody').innerHTML =
                 '<tr><td colspan="9" class="empty-row">Could not load catch data. Please try again later.</td></tr>';
         }
-        renderStats(allCatches);
         await initIdentity();
     }
 
@@ -64,7 +62,9 @@
                     signedOut = false;
                     showIdentityBanner(user);
                     applyLocationFilter(user.location);
+                    renderStats(allCatches);
                     setTopLocationDisplay(extractRegion(user.location));
+                    loadWeatherForUser(user.location);
                     return;
                 }
             } catch {
@@ -74,7 +74,9 @@
         }
 
         signedOut = true;
+        clearWeather();
         showIdentityForm();
+        clearStats();
         applyFilters();
     }
 
@@ -187,7 +189,9 @@
             signedOut = false;
             showIdentityBanner(data);
             applyLocationFilter(data.location);
+            renderStats(allCatches);
             setTopLocationDisplay(extractRegion(data.location));
+            loadWeatherForUser(data.location);
         } catch {
             showIdentityError('Could not reach the server. Please try again.');
         } finally {
@@ -254,7 +258,8 @@
         setIdentityMode('login');
         showIdentityForm();
         signedOut = true;
-        setTopLocationDisplay(aggregateTopLocation);
+        clearStats();
+        clearWeather();
         applyFilters();
     }
 
@@ -272,12 +277,20 @@
         });
 
         const topSpecies = Object.entries(speciesCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '--';
-        aggregateTopLocation = Object.entries(locationCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '--';
+        const topLocation = Object.entries(locationCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '--';
 
         document.getElementById('statTotalCatches').textContent = totalCatches;
         document.getElementById('statTotalAccounts').textContent = accountIds.size;
         document.getElementById('statTopSpecies').textContent = topSpecies;
-        setTopLocationDisplay(aggregateTopLocation);
+        setTopLocationDisplay(topLocation);
+    }
+
+    // Blanks the stats cards while signed out, since they should only reflect the signed-in user
+    function clearStats() {
+        document.getElementById('statTotalCatches').textContent = '--';
+        document.getElementById('statTotalAccounts').textContent = '--';
+        document.getElementById('statTopSpecies').textContent = '--';
+        document.getElementById('statTopLocation').textContent = '--';
     }
 
     // Shows the signed-in user's own registered region instead of the site-wide aggregate
@@ -452,9 +465,24 @@
         }
     }
 
-    async function loadWeather(lat, lng) {
+    // Forward-geocodes the user's registered account location (e.g. "Bulacan, Philippines") to coordinates
+    async function geocodeLocation(locationText) {
         try {
-            const locationName = await getLocationName(lat, lng);
+            const res = await fetch(
+                `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationText)}&format=json&limit=1`,
+                { headers: { 'Accept-Language': 'en' } }
+            );
+            const data = await res.json();
+            if (!Array.isArray(data) || !data.length) return null;
+            return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        } catch {
+            return null;
+        }
+    }
+
+    async function loadWeather(lat, lng, displayName) {
+        try {
+            const locationName = displayName || await getLocationName(lat, lng);
             document.getElementById('weatherLocation').textContent = `📍 ${locationName}`;
 
             const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}` +
@@ -493,20 +521,24 @@
         }
     }
 
-    // Defaults to Manila when geolocation is denied or unavailable, same as the mobile dashboard
-    function initWeather() {
-        const defaultLat = 14.5995;
-        const defaultLng = 120.9842;
+    // Defaults to Manila if the account location can't be geocoded, same fallback as the mobile dashboard
+    async function loadWeatherForUser(location) {
+        document.getElementById('weatherLocation').textContent = '📍 Detecting location…';
+        document.getElementById('weatherContent').innerHTML = '<p class="weather-loading">Loading weather data…</p>';
 
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => loadWeather(pos.coords.latitude, pos.coords.longitude),
-                () => loadWeather(defaultLat, defaultLng),
-                { enableHighAccuracy: true, timeout: 8000 }
-            );
+        const coords = await geocodeLocation(location);
+        if (coords) {
+            loadWeather(coords.lat, coords.lng, location);
         } else {
-            loadWeather(defaultLat, defaultLng);
+            loadWeather(14.5995, 120.9842, location);
         }
+    }
+
+    // Blanks the weather card while signed out, since it should only reflect the signed-in user's location
+    function clearWeather() {
+        document.getElementById('weatherLocation').textContent = '--';
+        document.getElementById('weatherContent').innerHTML =
+            '<p class="weather-loading">Sign in to see the weather for your location.</p>';
     }
 
     document.getElementById('searchInput').addEventListener('input', applyFilters);
@@ -521,5 +553,4 @@
     document.getElementById('exportPdfBtn').addEventListener('click', exportPdf);
 
     loadCatches();
-    initWeather();
 })();
